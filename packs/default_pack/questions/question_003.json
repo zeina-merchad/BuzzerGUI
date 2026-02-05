@@ -1,0 +1,19 @@
+{
+  "id": "q003",
+  "round": 1,
+  "text": "How many players are on the field per team in football?",
+  "options": [
+    "9 players",
+    "10 players",
+    "11 players",
+    "12 players"
+  ],
+  "correct_index": 2,
+  "media": {
+    "type": "none",
+    "path": null
+  },
+  "difficulty": "easy",
+  "tags": ["rules", "basics"],
+  "points": 1
+}

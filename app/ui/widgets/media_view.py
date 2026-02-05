@@ -6,7 +6,6 @@ class MediaView(QWidget):
     def __init__(self):
         super().__init__()
         
-        # Media box exactly like reference - rounded with green border
         self.box = QLabel()
         self.box.setAlignment(Qt.AlignCenter)
         self.box.setScaledContents(False)
@@ -23,7 +22,6 @@ class MediaView(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.box)
         
-        # Start hidden - only show when needed
         self.hide()
 
     def show_path(self, media_type: str, rel_path: str):

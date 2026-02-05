@@ -13,15 +13,14 @@ class OptionsView(QWidget):
 
         positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
         letters = ["A", "B", "C", "D"]
-        # Exact colors from reference: green, bright green, green, gray
+        
         border_colors = ["#39FF14", "#66ff33", "#39FF14", "#888888"]
 
         for i, (row, col) in enumerate(positions):
             container = QWidget()
-            container.setMinimumHeight(80)  # Minimum height
-            container.setMaximumHeight(120)  # Maximum height to prevent huge cells
+            container.setMinimumHeight(80)
+            container.setMaximumHeight(120) 
             
-            # Dark background with colored left border (exactly like reference)
             container.setStyleSheet(
                 f"QWidget {{ "
                 f"background: rgba(20, 30, 45, 0.9); "
@@ -61,8 +60,7 @@ class OptionsView(QWidget):
             self._labels.append(text_label)
             grid.addWidget(container, row, col)
 
-        # Don't stretch rows/columns - let them use natural size
-        # This prevents them from expanding to fill all available space
+
 
     def set_options(self, options: list[str]):
         opts = options[:]
@@ -71,6 +69,6 @@ class OptionsView(QWidget):
         
         for i, lab in enumerate(self._labels):
             if opts[i]:
-                lab.setText(opts[i].upper())  # Uppercase like reference
+                lab.setText(opts[i].upper()) 
             else:
                 lab.setText("")

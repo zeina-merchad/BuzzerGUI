@@ -1,0 +1,19 @@
+{
+  "id": "q002",
+  "round": 1,
+  "text": "Which player is known as 'CR7'?",
+  "options": [
+    "Lionel Messi",
+    "Cristiano Ronaldo",
+    "Neymar Jr",
+    "Kylian Mbappe"
+  ],
+  "correct_index": 1,
+  "media": {
+    "type": "none",
+    "path": null
+  },
+  "difficulty": "easy",
+  "tags": ["players", "nicknames"],
+  "points": 1
+}

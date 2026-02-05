@@ -10,6 +10,7 @@ from app.ui.widgets.scoreboard import ScoreboardWidget
 from app.ui.widgets.timer_widget import TimerWidget
 from app.ui.widgets.options_view import OptionsView
 from app.ui.widgets.media_view import MediaView
+from app.ui.widgets.cascading_widget import CascadingAttemptsWidget
 
 
 ADMIN_TOOLTIP = (
@@ -168,19 +169,23 @@ class HostScreen(QWidget):
         self.player_cards[4] = CornerPlayerCard(4)
         game_grid.addWidget(self.player_cards[4], 2, 2, alignment=Qt.AlignBottom | Qt.AlignRight)
         
-        # ---- Center Column (Timer + Media + Question + Options) ----
+        # ---- Center Column (Timer + Cascading Widget + Media + Question + Options) ----
         center_widget = QWidget()
         center_widget.setStyleSheet("QWidget { background: transparent; }")
-        center_widget.setMaximumWidth(900)  # Constrain max width
+        center_widget.setMaximumWidth(900) 
         center_layout = QVBoxLayout(center_widget)
         center_layout.setSpacing(20)
-        center_layout.setContentsMargins(120, 0, 120, 0)  # Much larger margins
+        center_layout.setContentsMargins(120, 0, 120, 0)  
         
-        # Timer at the very top (circular, centered)
+
         self.timer = TimerWidget()
         center_layout.addWidget(self.timer, alignment=Qt.AlignCenter)
         
-        # Media display (16:9 rounded rectangle with green border)
+
+        self.cascading_widget = CascadingAttemptsWidget()
+        center_layout.addWidget(self.cascading_widget, alignment=Qt.AlignCenter)
+        
+
         self.media = MediaView()
         center_layout.addWidget(self.media)
         
@@ -328,6 +333,10 @@ class HostScreen(QWidget):
         self.engine.lock_changed.connect(self._on_lock)
         self.engine.scores_changed.connect(self._render_scores)
         
+        # NEW: Cascading attempts connections
+        self.engine.attempt_changed.connect(self._on_attempt_changed)
+        self.engine.attempt_failed.connect(self._on_attempt_failed)
+        
         # Buzzer connections
         if hasattr(self.buzzer, "connected"):
             self.buzzer.connected.connect(self._on_buzzer_connected)
@@ -343,6 +352,7 @@ class HostScreen(QWidget):
         QMessageBox.information(self, "Admin Dashboard", ADMIN_TOOLTIP)
     
     def _start_question(self):
+        self.cascading_widget.reset()  # NEW: Reset cascading widget
         self.engine.start_question()
         if hasattr(self.buzzer, "reset_all"):
             self.buzzer.reset_all()
@@ -372,6 +382,17 @@ class HostScreen(QWidget):
     def _on_lock(self, locked_id):
         for pid, card in self.player_cards.items():
             card.highlight_locked(locked_id == pid)
+    
+    # NEW: Cascading attempts handlers
+    def _on_attempt_changed(self, attempt_number: int):
+        """Handle attempt number change"""
+        points = self.engine.get_points_for_current_attempt()
+        remaining = self.engine.get_players_remaining()
+        self.cascading_widget.update_attempt(attempt_number, points, remaining)
+    
+    def _on_attempt_failed(self, player_id: int, attempt_number: int):
+        """Handle failed attempt"""
+        self.cascading_widget.show_attempt_failed(player_id)
     
     def _render_question(self):
         q = self.engine.current_question()

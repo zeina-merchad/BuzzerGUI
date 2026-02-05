@@ -1,0 +1,19 @@
+{
+  "name": "Football Quiz Demo Pack",
+  "version": 1,
+  "rounds": 1,
+  "questions_per_round": 5,
+  "timer_seconds": 20,
+  "answer_seconds": 8,
+  "shuffle_questions": false,
+  "question_files": [
+    "questions/question_001.json",
+    "questions/question_002.json",
+    "questions/question_003.json",
+    "questions/question_004.json",
+    "questions/question_005.json"
+  ],
+  "allow_multiple_attempts": false,
+  "penalty_for_wrong": 0,
+  "bonus_for_speed": false
+}
