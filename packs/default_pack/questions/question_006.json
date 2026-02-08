@@ -1,0 +1,22 @@
+{
+  "id": "q_4b1a28d2",
+  "round": 1,
+  "text": "eeeeeeeee",
+  "options": [
+    "qqq",
+    "rrr",
+    "rrrr",
+    "5555"
+  ],
+  "correct_index": 1,
+  "media": {
+    "type": "image",
+    "path": "C:/Users/mersh/Downloads/Event Logo.jpg"
+  },
+  "difficulty": "medium",
+  "tags": [],
+  "points_first_attempt": 1,
+  "points_second_attempt": 1,
+  "points_third_attempt": 1,
+  "max_attempts": 3
+}

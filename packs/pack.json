@@ -11,8 +11,7 @@
     "questions/question_002.json",
     "questions/question_003.json",
     "questions/question_004.json",
-    "questions/question_005.json",
-    "questions/question_006.json"
+    "questions/question_005.json"
   ],
   "enable_cascading_attempts": true,
   "reset_timer_each_attempt": false,

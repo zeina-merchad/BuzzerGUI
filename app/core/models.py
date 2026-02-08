@@ -43,6 +43,7 @@ class Question:
     points_first_attempt: int = 3      # Points if answered correctly on 1st try
     points_second_attempt: int = 2     # Points if answered correctly on 2nd try
     points_third_attempt: int = 1      # Points if answered correctly on 3rd try
+    points_fourth_attempt: int = 0
     
     max_attempts: int = 3            # Maximum number of attempts allowed
     
@@ -77,6 +78,7 @@ class Question:
             1: self.points_first_attempt,
             2: self.points_second_attempt,
             3: self.points_third_attempt,
+            4: self.points_fourth_attempt
         }
         
         return points_map.get(attempt_number, 0)
@@ -102,6 +104,7 @@ class Question:
             "points_first_attempt": self.points_first_attempt,
             "points_second_attempt": self.points_second_attempt,
             "points_third_attempt": self.points_third_attempt,
+            "points_fourth_attempt": self.points_fourth_attempt,
             "max_attempts": self.max_attempts,
         }
 

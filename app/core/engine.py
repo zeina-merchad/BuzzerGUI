@@ -11,7 +11,7 @@ from app.core.timer import CountdownTimer
 
 
 class GameEngine(QObject):
-    """Enhanced game engine with cascading attempts support"""
+    """Enhanced game engine with cascading attempts support and MQTT hardware integration"""
     
     # UI signals
     phase_changed = Signal(str)
@@ -23,8 +23,11 @@ class GameEngine(QObject):
     error_occurred = Signal(str)
     
     # NEW: Cascading attempts signals
-    attempt_changed = Signal(int)        # current_attempt_number (1-4)
+    attempt_changed = Signal(int)        # current_attempt_number (1-3)
     attempt_failed = Signal(int, int)    # (player_id, attempt_number)
+    
+    # NEW: Hardware signals
+    hardware_status_changed = Signal(bool)  # connected or not
     
     def __init__(self, cfg: GameConfig, questions: List[Question]):
         super().__init__()
@@ -68,8 +71,113 @@ class GameEngine(QObject):
         
         # Track answered questions
         self.answered_questions: set[int] = set()
+        
+        # NEW: MQTT Hardware Backend
+        self.mqtt_backend = None
+        self.use_hardware = False
+        self._hardware_enabled = False
     
-    # ----- Getters -----
+    # ========================================================================
+    # HARDWARE INTEGRATION
+    # ========================================================================
+    
+    def enable_hardware_buzzers(self, broker_host: str = "192.168.10.10") -> bool:
+        """
+        Enable ESP32 hardware buzzers via MQTT
+        
+        Args:
+            broker_host: MQTT broker IP address
+            
+        Returns:
+            True if hardware connected successfully
+        """
+        try:
+            # Import here to avoid dependency if not using hardware
+            from app.hardware.mqtt_buzzer_backend import MQTTBuzzerBackend, BuzzEvent, AnswerEvent
+            
+            print(f"🔌 Enabling hardware buzzers...")
+            
+            # Create backend
+            self.mqtt_backend = MQTTBuzzerBackend(broker_host=broker_host)
+            
+            # Set up callbacks
+            self.mqtt_backend.on_buzz_callback = self._on_hardware_buzz
+            self.mqtt_backend.on_answer_callback = self._on_hardware_answer
+            self.mqtt_backend.on_player_connected_callback = self._on_hardware_player_connected
+            
+            # Connect
+            if self.mqtt_backend.connect():
+                self.use_hardware = True
+                self._hardware_enabled = True
+                self.hardware_status_changed.emit(True)
+                print("✓ Hardware buzzers enabled!")
+                return True
+            else:
+                print("✗ Failed to connect to MQTT broker")
+                self.hardware_status_changed.emit(False)
+                return False
+                
+        except ImportError:
+            print("✗ MQTT backend not found. Install paho-mqtt: pip install paho-mqtt")
+            self.hardware_status_changed.emit(False)
+            return False
+        except Exception as e:
+            print(f"✗ Hardware error: {e}")
+            self.hardware_status_changed.emit(False)
+            return False
+    
+    def disable_hardware_buzzers(self):
+        """Disable hardware buzzers and disconnect from MQTT"""
+        if self.mqtt_backend:
+            self.mqtt_backend.disconnect()
+            self.mqtt_backend = None
+        
+        self.use_hardware = False
+        self._hardware_enabled = False
+        self.hardware_status_changed.emit(False)
+        print("🔌 Hardware buzzers disabled")
+    
+    def is_hardware_enabled(self) -> bool:
+        """Check if hardware is currently enabled"""
+        return self._hardware_enabled
+    
+    def get_connected_hardware_players(self) -> List[int]:
+        """Get list of connected ESP32 players"""
+        if self.mqtt_backend:
+            return self.mqtt_backend.get_connected_players()
+        return []
+    
+    def _on_hardware_buzz(self, event):
+        """Handle buzz from ESP32 hardware"""
+        print(f"🔔 Hardware buzz from Player {event.player_id} (latency: {event.latency_ms}ms)")
+        
+        # Use existing buzz handling logic
+        current_time_ms = int(time.time() * 1000)
+        self.on_buzz(event.player_id, event.timestamp_ms, current_time_ms)
+    
+    def _on_hardware_answer(self, event):
+        """Handle answer from ESP32 hardware"""
+        print(f"📝 Hardware answer from Player {event.player_id}: {event.answer}")
+        
+        # Convert answer letter to index (A=0, B=1, C=2, D=3)
+        answer_index = ord(event.answer.upper()) - ord('A')
+        
+        # Check if answer is correct
+        question = self.current_question()
+        is_correct = (answer_index == question.correct_index)
+        
+        # Apply answer
+        self.apply_answer(is_correct)
+    
+    def _on_hardware_player_connected(self, player_id: int):
+        """Handle ESP32 player connection"""
+        print(f"✓ ESP32 Player {player_id} connected")
+        # Could update UI to show player as online
+    
+    # ========================================================================
+    # GETTERS
+    # ========================================================================
+    
     def current_question(self) -> Question:
         """Get current question"""
         if not self.questions:
@@ -98,7 +206,10 @@ class GameEngine(QObject):
         question = self.current_question()
         return question.get_points_for_attempt(self.current_attempt_number)
     
-    # ----- Game Control -----
+    # ========================================================================
+    # GAME CONTROL
+    # ========================================================================
+    
     def start_question(self) -> None:
         """Start showing current question"""
         self.locked_buzzer_id = None
@@ -116,6 +227,14 @@ class GameEngine(QObject):
         
         self.timer.start(self.cfg.timer_seconds * 1000)
         self.question_changed.emit()
+        
+        # NEW: Tell hardware to unlock buzzers
+        if self.use_hardware and self.mqtt_backend:
+            question = self.current_question()
+            self.mqtt_backend.start_question(
+                question_id=question.id,
+                max_attempts=question.max_attempts
+            )
     
     def next_question(self) -> None:
         """Move to next question"""
@@ -135,10 +254,19 @@ class GameEngine(QObject):
         """Reset buzzers without changing timer"""
         self.locked_buzzer_id = None
         self.lock_changed.emit(None)
+        
+        # NEW: Also reset hardware
+        if self.use_hardware and self.mqtt_backend:
+            self.mqtt_backend._publish_reset()
     
     def skip_question(self) -> None:
         """Skip current question without scoring"""
         self.answered_questions.add(self.current_q_idx)
+        
+        # NEW: Tell hardware to end question
+        if self.use_hardware and self.mqtt_backend:
+            self.mqtt_backend.end_question()
+        
         self.next_question()
     
     def reset_game(self) -> None:
@@ -170,8 +298,15 @@ class GameEngine(QObject):
         self.phase = Phase.GAME_END
         self.phase_changed.emit(self.phase.value)
         self.timer.stop()
+        
+        # NEW: Tell hardware game ended
+        if self.use_hardware and self.mqtt_backend:
+            self.mqtt_backend.end_question()
     
-    # ----- Answer Handling with Cascading Attempts -----
+    # ========================================================================
+    # ANSWER HANDLING WITH CASCADING ATTEMPTS
+    # ========================================================================
+    
     def apply_answer(self, is_correct: bool) -> None:
         """
         Apply answer judgement with cascading attempts support.
@@ -221,6 +356,10 @@ class GameEngine(QObject):
                 buzz_time_ms=buzz_time_ms
             ))
             
+            # NEW: Tell hardware answer was correct
+            if self.use_hardware and self.mqtt_backend:
+                self.mqtt_backend.mark_answer_correct(pid)
+            
             # Mark question as answered
             self.answered_questions.add(self.current_q_idx)
             
@@ -269,6 +408,10 @@ class GameEngine(QObject):
                     self.locked_buzzer_id = None
                     self.lock_changed.emit(None)
                     
+                    # NEW: Tell hardware to unlock for next attempt
+                    if self.use_hardware and self.mqtt_backend:
+                        self.mqtt_backend.mark_answer_wrong(pid)
+                    
                     # Optionally reset timer
                     if self.cfg.reset_timer_each_attempt:
                         self.timer.start(self.cfg.timer_seconds * 1000)
@@ -283,13 +426,21 @@ class GameEngine(QObject):
                     return  # Don't move to next question yet
             
             # No more attempts available or cascading disabled
+            
+            # NEW: Tell hardware question ended
+            if self.use_hardware and self.mqtt_backend:
+                self.mqtt_backend.end_question()
+            
             # Mark question as answered (incorrectly)
             self.answered_questions.add(self.current_q_idx)
             
             # Move to next question
             self.next_question()
     
-    # ----- Buzzer Input -----
+    # ========================================================================
+    # BUZZER INPUT
+    # ========================================================================
+    
     def on_buzz(self, buzzer_id: int, t_ms: int, received_ms: int) -> bool:
         """
         Handle buzz event with cascading attempts support.
@@ -319,7 +470,10 @@ class GameEngine(QObject):
         
         return True
     
-    # ----- Undo/Redo -----
+    # ========================================================================
+    # UNDO/REDO
+    # ========================================================================
+    
     def _save_state_for_undo(self, player_id: int, points: int, is_correct: bool, question_idx: int):
         """Save state for undo operation"""
         state = {
@@ -381,7 +535,10 @@ class GameEngine(QObject):
         # Move back to undo stack
         self._undo_stack.append(state)
     
-    # ----- Internal Callbacks -----
+    # ========================================================================
+    # INTERNAL CALLBACKS
+    # ========================================================================
+    
     def _on_timer_ended(self) -> None:
         """Handle timer expiration"""
         if self.phase == Phase.SHOW_QUESTION:
@@ -392,10 +549,14 @@ class GameEngine(QObject):
             # Mark as answered (no one got it)
             self.answered_questions.add(self.current_q_idx)
             
-            # Could auto-advance or wait for host
-            # self.next_question()
+            # NEW: Tell hardware time's up
+            if self.use_hardware and self.mqtt_backend:
+                self.mqtt_backend.end_question()
     
-    # ----- Question Management -----
+    # ========================================================================
+    # QUESTION MANAGEMENT
+    # ========================================================================
+    
     def reload_questions(self, new_questions: List[Question]) -> None:
         """Reload questions"""
         self.questions = new_questions[:]

@@ -14,6 +14,12 @@
     "path": null
   },
   "difficulty": "easy",
-  "tags": ["rules", "basics"],
-  "points": 1
+  "tags": [
+    "rules",
+    "basics"
+  ],
+  "points_first_attempt": 1,
+  "points_second_attempt": 2,
+  "points_third_attempt": 1,
+  "max_attempts": 3
 }

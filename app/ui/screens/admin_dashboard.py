@@ -840,7 +840,7 @@ class AdminDashboard(QWidget):
             points_first_attempt=getattr(question, 'points_first_attempt', 3),
             points_second_attempt=getattr(question, 'points_second_attempt', 2),
             points_third_attempt=getattr(question, 'points_third_attempt', 1),
-            max_attempts=getattr(question, 'max_attempts', 3),
+            max_attempts=3,
         )
         
         self.questions.append(new_question)
@@ -980,7 +980,7 @@ class AdminDashboard(QWidget):
                 points_first_attempt=self.edit_points.value(),
                 points_second_attempt=max(1, self.edit_points.value() - 1),
                 points_third_attempt=1,
-                max_attempts=4,
+                max_attempts=3,
             )
             self.questions.append(new_question)
         

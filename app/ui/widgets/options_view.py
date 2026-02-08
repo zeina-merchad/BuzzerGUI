@@ -14,7 +14,7 @@ class OptionsView(QWidget):
         positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
         letters = ["A", "B", "C", "D"]
         
-        border_colors = ["#39FF14", "#66ff33", "#39FF14", "#888888"]
+        border_colors = ["#39FF14", "#39FF14", "#39FF14", "#39FF14"]
 
         for i, (row, col) in enumerate(positions):
             container = QWidget()

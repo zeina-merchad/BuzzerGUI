@@ -191,6 +191,7 @@ def create_demo_pack(pack_dir: Path) -> Tuple[GameConfig, List[Question]]:
             points_first_attempt=3,
             points_second_attempt=2,
             points_third_attempt=1,
+            points_fourth_attempt = 0,
             max_attempts=3,
         ),
         Question(
@@ -206,6 +207,7 @@ def create_demo_pack(pack_dir: Path) -> Tuple[GameConfig, List[Question]]:
             points_first_attempt=3,
             points_second_attempt=2,
             points_third_attempt=1,
+            points_fourth_attempt = 0,
             max_attempts=3,
         ),
         Question(
@@ -221,6 +223,7 @@ def create_demo_pack(pack_dir: Path) -> Tuple[GameConfig, List[Question]]:
             points_first_attempt=3,
             points_second_attempt=2,
             points_third_attempt=1,
+            points_fourth_attempt = 0,
             max_attempts=3,
         ),
         Question(
@@ -236,6 +239,7 @@ def create_demo_pack(pack_dir: Path) -> Tuple[GameConfig, List[Question]]:
             points_first_attempt=5,
             points_second_attempt=3,
             points_third_attempt=2,
+            points_fourth_attempt = 0,
             max_attempts=3,
         ),
         Question(
@@ -251,6 +255,7 @@ def create_demo_pack(pack_dir: Path) -> Tuple[GameConfig, List[Question]]:
             points_first_attempt=3,
             points_second_attempt=2,
             points_third_attempt=1,
+            points_fourth_attempt = 0,
             max_attempts=3,
         ),
     ]
@@ -295,6 +300,7 @@ def _load_question(pack_dir: Path, q_path: Path) -> Question:
     points_first = int(q.get("points_first_attempt", 3))
     points_second = int(q.get("points_second_attempt", 2))
     points_third = int(q.get("points_third_attempt", 1))
+    points_fourth = int(q.get("points_fourth_attempt",0))
     max_attempts = int(q.get("max_attempts", 3))
     
     # Legacy support: if old 'points' field exists, use it for first attempt

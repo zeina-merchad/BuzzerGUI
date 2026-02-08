@@ -19,9 +19,8 @@ def main():
     pack_dir = cfg_app.packs_dir / cfg_app.default_pack_name
 
     app = QApplication(sys.argv)
-    app.setApplicationName("Football Buzzer")
-    app.setApplicationName("Football Buzzer")
-    app.setOrganizationName("Football Buzzer")
+    app.setApplicationName("Football Trivia Game")
+    app.setOrganizationName("Football Trivia Game")
 
     try:
         cfg, questions = load_pack(pack_dir)
