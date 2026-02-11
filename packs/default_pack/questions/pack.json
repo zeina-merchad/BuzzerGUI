@@ -1,8 +1,8 @@
 {
-  "name": "Current Game Pack",
+  "name": "UI Preview Pack",
   "version": 1,
-  "rounds": 1,
-  "questions_per_round": 6,
+  "rounds": 2,
+  "questions_per_round": 5,
   "timer_seconds": 20,
   "answer_seconds": 8,
   "shuffle_questions": false,

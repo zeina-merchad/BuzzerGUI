@@ -15,36 +15,37 @@ from app.constants import MediaType
 
 
 class QuestionListItem(QFrame):
-    """Enhanced question list item with drag-drop support"""
-    edit_clicked = Signal(str)
-    delete_clicked = Signal(str)
+    """Question list item with enabled/disabled checkbox"""
+    edit_clicked      = Signal(str)
+    delete_clicked    = Signal(str)
     duplicate_clicked = Signal(str)
-    
-    def __init__(self, question: Question, index: int):
+    toggle_clicked    = Signal(str, bool)   # (question_id, is_enabled)
+
+    def __init__(self, question: Question, index: int, enabled: bool = True):
         super().__init__()
         self.question = question
-        self.index = index
-        
-        self.setStyleSheet(
-            "QFrame { "
-            "background: rgba(20, 30, 45, 0.9); "
-            "border-left: 4px solid #39FF14; "
-            "border-top: 1px solid rgba(57, 255, 20, 0.2); "
-            "border-right: 1px solid rgba(57, 255, 20, 0.2); "
-            "border-bottom: 1px solid rgba(57, 255, 20, 0.2); "
-            "border-radius: 8px; "
-            "padding: 10px; "
-            "margin: 3px; "
-            "}"
-            "QFrame:hover { "
-            "background: rgba(30, 40, 55, 0.9); "
-            "border-left: 4px solid #5ddbff; "
-            "}"
-        )
-        
+        self.index    = index
+        self._enabled = enabled
+        self._apply_frame_style()
+
         layout = QHBoxLayout(self)
         layout.setSpacing(10)
-        
+
+        # ── Include checkbox ─────────────────────────────────────
+        self.chk_include = QCheckBox()
+        self.chk_include.setChecked(self._enabled)
+        self.chk_include.setToolTip("Include this question in the game")
+        self.chk_include.setFixedWidth(24)
+        self.chk_include.setStyleSheet(
+            "QCheckBox { background: transparent; border: none; }"
+            "QCheckBox::indicator { width: 20px; height: 20px; border-radius: 4px; }"
+            "QCheckBox::indicator:unchecked {"
+            "  background: rgba(80,80,80,0.4); border: 2px solid #666; }"
+            "QCheckBox::indicator:checked {"
+            "  background: #39FF14; border: 2px solid #39FF14; image: none; }"
+        )
+        self.chk_include.stateChanged.connect(self._on_toggle)
+
         # Question number
         num_label = QLabel(f"#{index + 1}")
         num_label.setFixedWidth(40)
@@ -158,9 +159,49 @@ class QuestionListItem(QFrame):
         btn_layout.addLayout(btn_row)
         btn_layout.addStretch()
         
+        layout.addWidget(self.chk_include)
         layout.addWidget(num_label)
         layout.addLayout(info_layout, stretch=1)
         layout.addLayout(btn_layout)
+
+    # ── helpers ──────────────────────────────────────────────────
+
+    def _apply_frame_style(self):
+        if self._enabled:
+            self.setStyleSheet(
+                "QFrame {"
+                "  background: rgba(20, 30, 45, 0.9);"
+                "  border-left: 4px solid #39FF14;"
+                "  border-top: 1px solid rgba(57,255,20,0.2);"
+                "  border-right: 1px solid rgba(57,255,20,0.2);"
+                "  border-bottom: 1px solid rgba(57,255,20,0.2);"
+                "  border-radius: 8px; padding: 10px; margin: 3px;"
+                "}"
+                "QFrame:hover { background: rgba(30,40,55,0.9);"
+                "  border-left: 4px solid #5ddbff; }"
+            )
+            self.setGraphicsEffect(None)
+        else:
+            self.setStyleSheet(
+                "QFrame {"
+                "  background: rgba(10, 12, 18, 0.7);"
+                "  border-left: 4px solid #444;"
+                "  border-top: 1px solid rgba(80,80,80,0.15);"
+                "  border-right: 1px solid rgba(80,80,80,0.15);"
+                "  border-bottom: 1px solid rgba(80,80,80,0.15);"
+                "  border-radius: 8px; padding: 10px; margin: 3px;"
+                "}"
+            )
+            # Dim the whole row with opacity
+            from PySide6.QtWidgets import QGraphicsOpacityEffect
+            effect = QGraphicsOpacityEffect(self)
+            effect.setOpacity(0.45)
+            self.setGraphicsEffect(effect)
+
+    def _on_toggle(self, state: int):
+        self._enabled = bool(state)
+        self._apply_frame_style()
+        self.toggle_clicked.emit(self.question.id, self._enabled)
 
 
 class AdminDashboard(QWidget):
@@ -176,6 +217,8 @@ class AdminDashboard(QWidget):
         self.questions = questions.copy()
         self.current_question_id = None
         self.has_unsaved_changes = False
+        # Set of question IDs that are disabled (unchecked)
+        self.disabled_ids: set = set()
         
         self.setStyleSheet("QWidget { background: #0d1b2a; }")
         self.setMinimumSize(1200, 800)
@@ -397,13 +440,99 @@ class AdminDashboard(QWidget):
         )
         content_layout.addRow("", self.bonus_for_speed)
         
+        # ===================================================================
+        # NEW: SCORING CONFIGURATION
+        # ===================================================================
+        
+        # Section header
+        scoring_header = QLabel("⭐ SCORING CONFIGURATION")
+        scoring_header.setStyleSheet(
+            "font-size: 16px; font-weight: 900; color: #39FF14; "
+            "padding-top: 20px; padding-bottom: 10px; background: transparent;"
+        )
+        content_layout.addRow("", scoring_header)
+        
+        # Points for 1st attempt (default)
+        self.points_first_default = QSpinBox()
+        self.points_first_default.setRange(0, 20)
+        self.points_first_default.setValue(
+            getattr(self.config, 'points_first_attempt_default', 3)
+        )
+        self.points_first_default.valueChanged.connect(self._mark_unsaved)
+        self.points_first_default.setStyleSheet(self._input_style())
+        self.points_first_default.setToolTip("Default points for 1st attempt")
+        content_layout.addRow(
+            self._create_label("Points - 1st Attempt (Default):"), 
+            self.points_first_default
+        )
+        
+        # Points for 2nd attempt (default)
+        self.points_second_default = QSpinBox()
+        self.points_second_default.setRange(0, 20)
+        self.points_second_default.setValue(
+            getattr(self.config, 'points_second_attempt_default', 2)
+        )
+        self.points_second_default.valueChanged.connect(self._mark_unsaved)
+        self.points_second_default.setStyleSheet(self._input_style())
+        self.points_second_default.setToolTip("Default points for 2nd attempt")
+        content_layout.addRow(
+            self._create_label("Points - 2nd Attempt (Default):"), 
+            self.points_second_default
+        )
+        
+        # Points for 3rd attempt (default)
+        self.points_third_default = QSpinBox()
+        self.points_third_default.setRange(0, 20)
+        self.points_third_default.setValue(
+            getattr(self.config, 'points_third_attempt_default', 1)
+        )
+        self.points_third_default.valueChanged.connect(self._mark_unsaved)
+        self.points_third_default.setStyleSheet(self._input_style())
+        self.points_third_default.setToolTip("Default points for 3rd attempt")
+        content_layout.addRow(
+            self._create_label("Points - 3rd Attempt (Default):"), 
+            self.points_third_default
+        )
+        
+        # Points for 4th attempt (default)
+        self.points_fourth_default = QSpinBox()
+        self.points_fourth_default.setRange(0, 20)
+        self.points_fourth_default.setValue(
+            getattr(self.config, 'points_fourth_attempt_default', 0)
+        )
+        self.points_fourth_default.valueChanged.connect(self._mark_unsaved)
+        self.points_fourth_default.setStyleSheet(self._input_style())
+        self.points_fourth_default.setToolTip("Default points for 4th attempt")
+        content_layout.addRow(
+            self._create_label("Points - 4th Attempt (Default):"), 
+            self.points_fourth_default
+        )
+        
+        # Max attempts (default)
+        self.max_attempts_default = QSpinBox()
+        self.max_attempts_default.setRange(1, 4)
+        self.max_attempts_default.setValue(
+            getattr(self.config, 'max_attempts_default', 3)
+        )
+        self.max_attempts_default.valueChanged.connect(self._mark_unsaved)
+        self.max_attempts_default.setStyleSheet(self._input_style())
+        self.max_attempts_default.setToolTip("Maximum attempts allowed (1-4)")
+        content_layout.addRow(
+            self._create_label("Max Attempts Allowed (Default):"), 
+            self.max_attempts_default
+        )
+        
         # Penalty
         self.penalty_for_wrong = QSpinBox()
         self.penalty_for_wrong.setRange(0, 10)
         self.penalty_for_wrong.setValue(self.config.penalty_for_wrong)
         self.penalty_for_wrong.valueChanged.connect(self._mark_unsaved)
         self.penalty_for_wrong.setStyleSheet(self._input_style())
-        content_layout.addRow(self._create_label("Penalty for Wrong Answer:"), self.penalty_for_wrong)
+        self.penalty_for_wrong.setToolTip("Points deducted for each wrong answer")
+        content_layout.addRow(
+            self._create_label("Penalty for Wrong Answer:"), 
+            self.penalty_for_wrong
+        )
         
         scroll.setWidget(content)
         layout.addWidget(scroll)
@@ -447,7 +576,16 @@ class AdminDashboard(QWidget):
         list_label.setStyleSheet(
             "font-size: 16px; font-weight: 900; color: white;"
         )
-        
+
+        self.enabled_count_label = QLabel()
+        self._update_enabled_count_label()
+        self.enabled_count_label.setStyleSheet(
+            "font-size: 11px; font-weight: 700; color: #39FF14;"
+            "background: rgba(57,255,20,0.1);"
+            "border: 1px solid rgba(57,255,20,0.3);"
+            "border-radius: 4px; padding: 3px 8px;"
+        )
+
         self.btn_new_question = QPushButton("➕ New")
         self.btn_new_question.setStyleSheet(
             "QPushButton { "
@@ -464,6 +602,7 @@ class AdminDashboard(QWidget):
         self.btn_new_question.clicked.connect(self._new_question)
         
         header_layout.addWidget(list_label)
+        header_layout.addWidget(self.enabled_count_label)
         header_layout.addStretch()
         header_layout.addWidget(self.btn_new_question)
         
@@ -557,12 +696,63 @@ class AdminDashboard(QWidget):
         self.edit_difficulty.setStyleSheet(self._input_style())
         form.addRow(self._create_label("Difficulty:"), self.edit_difficulty)
         
-        # Points (will be used as first attempt points)
-        self.edit_points = QSpinBox()
-        self.edit_points.setRange(1, 10)
-        self.edit_points.setValue(3)
-        self.edit_points.setStyleSheet(self._input_style())
-        form.addRow(self._create_label("Points (1st Attempt):"), self.edit_points)
+        # ===================================================================
+        # NEW: COMPREHENSIVE SCORING SECTION
+        # ===================================================================
+        
+        # Scoring section header
+        scoring_header = QLabel("⭐ QUESTION SCORING")
+        scoring_header.setStyleSheet(
+            "font-size: 14px; font-weight: 900; color: #39FF14; "
+            "padding-top: 15px; padding-bottom: 8px; background: transparent;"
+        )
+        form.addRow("", scoring_header)
+        
+        # Points for each attempt
+        self.edit_points_first = QSpinBox()
+        self.edit_points_first.setRange(0, 20)
+        self.edit_points_first.setValue(3)
+        self.edit_points_first.setStyleSheet(self._input_style())
+        self.edit_points_first.setToolTip("Points awarded if answered correctly on 1st attempt")
+        form.addRow(self._create_label("Points - 1st Attempt:"), self.edit_points_first)
+        
+        self.edit_points_second = QSpinBox()
+        self.edit_points_second.setRange(0, 20)
+        self.edit_points_second.setValue(2)
+        self.edit_points_second.setStyleSheet(self._input_style())
+        self.edit_points_second.setToolTip("Points awarded if answered correctly on 2nd attempt")
+        form.addRow(self._create_label("Points - 2nd Attempt:"), self.edit_points_second)
+        
+        self.edit_points_third = QSpinBox()
+        self.edit_points_third.setRange(0, 20)
+        self.edit_points_third.setValue(1)
+        self.edit_points_third.setStyleSheet(self._input_style())
+        self.edit_points_third.setToolTip("Points awarded if answered correctly on 3rd attempt")
+        form.addRow(self._create_label("Points - 3rd Attempt:"), self.edit_points_third)
+        
+        self.edit_points_fourth = QSpinBox()
+        self.edit_points_fourth.setRange(0, 20)
+        self.edit_points_fourth.setValue(0)
+        self.edit_points_fourth.setStyleSheet(self._input_style())
+        self.edit_points_fourth.setToolTip("Points awarded if answered correctly on 4th attempt")
+        form.addRow(self._create_label("Points - 4th Attempt:"), self.edit_points_fourth)
+        
+        # Max attempts for this question
+        self.edit_max_attempts = QSpinBox()
+        self.edit_max_attempts.setRange(1, 4)
+        self.edit_max_attempts.setValue(3)
+        self.edit_max_attempts.setStyleSheet(self._input_style())
+        self.edit_max_attempts.setToolTip("Maximum number of attempts allowed for this question (1-4)")
+        form.addRow(self._create_label("Max Attempts:"), self.edit_max_attempts)
+        
+        # Help text
+        scoring_help = QLabel("💡 Tip: Higher difficulty questions can have more points on 1st attempt")
+        scoring_help.setWordWrap(True)
+        scoring_help.setStyleSheet(
+            "font-size: 11px; color: rgba(255, 255, 255, 0.6); "
+            "background: transparent; padding: 5px;"
+        )
+        form.addRow("", scoring_help)
         
         # Media type
         media_layout = QHBoxLayout()
@@ -750,10 +940,12 @@ class AdminDashboard(QWidget):
         
         # Add question items
         for i, question in enumerate(self.questions):
-            item = QuestionListItem(question, i)
+            is_enabled = question.id not in self.disabled_ids
+            item = QuestionListItem(question, i, enabled=is_enabled)
             item.edit_clicked.connect(self._edit_question)
             item.delete_clicked.connect(self._delete_question)
             item.duplicate_clicked.connect(self._duplicate_question)
+            item.toggle_clicked.connect(self._on_question_toggled)
             self.questions_layout.addWidget(item)
         
         self.questions_layout.addStretch()
@@ -763,6 +955,13 @@ class AdminDashboard(QWidget):
         self.current_question_id = None
         self.editor_group.setEnabled(True)
         
+        # Load defaults from global settings
+        default_first = self.points_first_default.value()
+        default_second = self.points_second_default.value()
+        default_third = self.points_third_default.value()
+        default_fourth = self.points_fourth_default.value()
+        default_max = self.max_attempts_default.value()
+        
         # Clear form
         self.edit_round.setValue(1)
         self.edit_question_text.clear()
@@ -770,7 +969,14 @@ class AdminDashboard(QWidget):
             option.clear()
         self.edit_correct.setCurrentIndex(0)
         self.edit_difficulty.setCurrentIndex(1)
-        self.edit_points.setValue(3)
+        
+        # Set scoring to global defaults
+        self.edit_points_first.setValue(default_first)
+        self.edit_points_second.setValue(default_second)
+        self.edit_points_third.setValue(default_third)
+        self.edit_points_fourth.setValue(default_fourth)
+        self.edit_max_attempts.setValue(default_max)
+        
         self.edit_media_type.setCurrentIndex(0)
         self.edit_media_path.clear()
         self.media_preview.setText("No media")
@@ -801,9 +1007,22 @@ class AdminDashboard(QWidget):
         diff_index = {"easy": 0, "medium": 1, "hard": 2}.get(question.difficulty, 1)
         self.edit_difficulty.setCurrentIndex(diff_index)
         
-        # FIXED: Points - use first attempt points
-        points = getattr(question, 'points_first_attempt', getattr(question, 'points', 1))
-        self.edit_points.setValue(points)
+        # Load all scoring fields
+        self.edit_points_first.setValue(
+            getattr(question, 'points_first_attempt', 3)
+        )
+        self.edit_points_second.setValue(
+            getattr(question, 'points_second_attempt', 2)
+        )
+        self.edit_points_third.setValue(
+            getattr(question, 'points_third_attempt', 1)
+        )
+        self.edit_points_fourth.setValue(
+            getattr(question, 'points_fourth_attempt', 0)
+        )
+        self.edit_max_attempts.setValue(
+            getattr(question, 'max_attempts', 3)
+        )
         
         # Load media
         media_index = {
@@ -943,7 +1162,14 @@ class AdminDashboard(QWidget):
         
         difficulty = self.edit_difficulty.currentText().lower()
         
-        # FIXED: Create/update question with cascading points
+        # Get all scoring values from form
+        points_1st = self.edit_points_first.value()
+        points_2nd = self.edit_points_second.value()
+        points_3rd = self.edit_points_third.value()
+        points_4th = self.edit_points_fourth.value()
+        max_attempts = self.edit_max_attempts.value()
+        
+        # Create/update question with all cascading points
         if self.current_question_id:
             # Update existing
             for i, q in enumerate(self.questions):
@@ -957,11 +1183,12 @@ class AdminDashboard(QWidget):
                         media=media,
                         difficulty=difficulty,
                         tags=q.tags,
-                        # NEW: Use cascading points (edit_points = first attempt)
-                        points_first_attempt=self.edit_points.value(),
-                        points_second_attempt=max(1, self.edit_points.value() - 1),
-                        points_third_attempt=1,
-                        max_attempts=3,
+                        # Use all scoring fields from form
+                        points_first_attempt=points_1st,
+                        points_second_attempt=points_2nd,
+                        points_third_attempt=points_3rd,
+                        points_fourth_attempt=points_4th,
+                        max_attempts=max_attempts,
                     )
                     break
         else:
@@ -976,11 +1203,12 @@ class AdminDashboard(QWidget):
                 media=media,
                 difficulty=difficulty,
                 tags=[],
-                # NEW: Use cascading points (edit_points = first attempt)
-                points_first_attempt=self.edit_points.value(),
-                points_second_attempt=max(1, self.edit_points.value() - 1),
-                points_third_attempt=1,
-                max_attempts=3,
+                # Use all scoring fields from form
+                points_first_attempt=points_1st,
+                points_second_attempt=points_2nd,
+                points_third_attempt=points_3rd,
+                points_fourth_attempt=points_4th,
+                max_attempts=max_attempts,
             )
             self.questions.append(new_question)
         
@@ -990,6 +1218,42 @@ class AdminDashboard(QWidget):
         
         QMessageBox.information(self, "Success", "Question saved successfully!")
     
+    def _on_question_toggled(self, question_id: str, is_enabled: bool):
+        """Handle checkbox toggle on a question row."""
+        if is_enabled:
+            self.disabled_ids.discard(question_id)
+        else:
+            self.disabled_ids.add(question_id)
+        self._update_enabled_count_label()
+        self._mark_unsaved()
+
+    def _update_enabled_count_label(self):
+        """Refresh the 'X / Y active' badge in the list header."""
+        total   = len(self.questions)
+        enabled = total - len(self.disabled_ids)
+        self.enabled_count_label.setText(f"✅ {enabled} / {total} active")
+        if enabled == 0:
+            self.enabled_count_label.setStyleSheet(
+                "font-size: 11px; font-weight: 700; color: #e74c3c;"
+                "background: rgba(231,76,60,0.1);"
+                "border: 1px solid rgba(231,76,60,0.4);"
+                "border-radius: 4px; padding: 3px 8px;"
+            )
+        elif enabled < total:
+            self.enabled_count_label.setStyleSheet(
+                "font-size: 11px; font-weight: 700; color: #f39c12;"
+                "background: rgba(243,156,18,0.1);"
+                "border: 1px solid rgba(243,156,18,0.4);"
+                "border-radius: 4px; padding: 3px 8px;"
+            )
+        else:
+            self.enabled_count_label.setStyleSheet(
+                "font-size: 11px; font-weight: 700; color: #39FF14;"
+                "background: rgba(57,255,20,0.1);"
+                "border: 1px solid rgba(57,255,20,0.3);"
+                "border-radius: 4px; padding: 3px 8px;"
+            )
+
     def _cancel_edit(self):
         """Cancel editing"""
         self.current_question_id = None
@@ -1005,7 +1269,7 @@ class AdminDashboard(QWidget):
     
     def _save_all(self):
         """Save all changes and emit signals"""
-        # FIXED: Update config with correct field names
+        # Update config with all new scoring defaults
         updated_config = GameConfig(
             name=self.pack_name.text(),
             version=self.config.version,
@@ -1016,16 +1280,23 @@ class AdminDashboard(QWidget):
             shuffle_questions=self.shuffle_questions.isChecked(),
             question_files=self.config.question_files,
             pack_dir=self.config.pack_dir,
-            # CHANGED: Use new field names
+            # Cascading attempts settings
             enable_cascading_attempts=self.enable_cascading_global.isChecked(),
             reset_timer_each_attempt=getattr(self.config, 'reset_timer_each_attempt', False),
             penalty_for_wrong=self.penalty_for_wrong.value(),
             bonus_for_speed=self.bonus_for_speed.isChecked(),
+            # NEW: Global scoring defaults
+            points_first_attempt_default=self.points_first_default.value(),
+            points_second_attempt_default=self.points_second_default.value(),
+            points_third_attempt_default=self.points_third_default.value(),
+            points_fourth_attempt_default=self.points_fourth_default.value(),
+            max_attempts_default=self.max_attempts_default.value(),
         )
         
-        # Emit signals
+        # Emit signals — only pass enabled questions to the engine
+        enabled_questions = [q for q in self.questions if q.id not in self.disabled_ids]
         self.config_changed.emit(updated_config)
-        self.questions_changed.emit(self.questions)
+        self.questions_changed.emit(enabled_questions)
         
         self.has_unsaved_changes = False
         self.changes_label.setText("● No unsaved changes")

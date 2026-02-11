@@ -1,12 +1,12 @@
 {
-  "id": "q002",
+  "id": "demo2",
   "round": 1,
   "text": "Which player is known as 'CR7'?",
   "options": [
-    "Lionel Messi",
-    "Cristiano Ronaldo",
-    "Neymar Jr",
-    "Kylian Mbappe"
+    "Messi",
+    "Ronaldo",
+    "Neymar",
+    "Mbappe"
   ],
   "correct_index": 1,
   "media": {
@@ -15,12 +15,11 @@
   },
   "difficulty": "easy",
   "tags": [
-    "players",
-    "nicknames"
+    "players"
   ],
-  "points_first_attempt": 1,
+  "points_first_attempt": 3,
   "points_second_attempt": 2,
   "points_third_attempt": 1,
-  "max_attempts": 3,
-  "enabled": true
+  "points_fourth_attempt": 0,
+  "max_attempts": 3
 }

@@ -2,7 +2,7 @@
   "name": "Current Game Pack",
   "version": 1,
   "rounds": 1,
-  "questions_per_round": 6,
+  "questions_per_round": 5,
   "timer_seconds": 20,
   "answer_seconds": 8,
   "shuffle_questions": false,
@@ -11,8 +11,7 @@
     "questions/question_002.json",
     "questions/question_003.json",
     "questions/question_004.json",
-    "questions/question_005.json",
-    "questions/question_006.json"
+    "questions/question_005.json"
   ],
   "enable_cascading_attempts": true,
   "reset_timer_each_attempt": false,

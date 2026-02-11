@@ -122,6 +122,43 @@ class MediaView(QWidget):
         # Start hidden
         self.hide()
 
+
+    def clear(self):
+        """Clear media area and stop playback"""
+        self._stop_media()
+        self.current_media_type = None
+        self.image_box.setPixmap(QPixmap())
+        self.image_box.setText("")
+        self._hide_video()
+        self.hide()
+
+    def set_media(self, media, pack_dir):
+        """
+        Optional convenience wrapper if you ever want HostScreen to call one method.
+        `media` is app.core.models.Media
+        """
+        from pathlib import Path
+
+        if media is None or media.type.value == "none":
+            self.clear()
+            return
+
+        media_path = (Path(pack_dir) / (media.path or "")).resolve()
+
+        if not media_path.exists():
+            self.show_path(media.type.value, media.path or "")
+            return
+
+        if media.type.value == "image":
+            self.show_image(str(media_path))
+        elif media.type.value == "video":
+            self.show_video(str(media_path))
+        elif media.type.value == "audio":
+            self.show_audio(str(media_path))
+        else:
+            self.show_path(media.type.value, media.path or "")
+
+
     # ---------------------------------------------------------------------
     # Public API
     # ---------------------------------------------------------------------

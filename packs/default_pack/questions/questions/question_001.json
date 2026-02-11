@@ -1,5 +1,5 @@
 {
-  "id": "q001",
+  "id": "demo1",
   "round": 1,
   "text": "Who won the 2014 FIFA World Cup?",
   "options": [
@@ -15,12 +15,11 @@
   },
   "difficulty": "easy",
   "tags": [
-    "world_cup",
-    "2014"
+    "world_cup"
   ],
-  "points_first_attempt": 1,
+  "points_first_attempt": 3,
   "points_second_attempt": 2,
   "points_third_attempt": 1,
-  "max_attempts": 3,
-  "enabled": true
+  "points_fourth_attempt": 0,
+  "max_attempts": 3
 }

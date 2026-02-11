@@ -1,0 +1,25 @@
+{
+  "id": "demo3",
+  "round": 1,
+  "text": "How many players per team in football?",
+  "options": [
+    "9",
+    "10",
+    "11",
+    "12"
+  ],
+  "correct_index": 2,
+  "media": {
+    "type": "none",
+    "path": null
+  },
+  "difficulty": "easy",
+  "tags": [
+    "rules"
+  ],
+  "points_first_attempt": 2,
+  "points_second_attempt": 1,
+  "points_third_attempt": 1,
+  "points_fourth_attempt": 0,
+  "max_attempts": 2
+}

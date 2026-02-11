@@ -88,22 +88,22 @@ class CascadingAttemptsWidget(QWidget):
         # Already attempted players (crosses) - in 2x2 grid for space
         self.attempted_widget = QWidget()
         attempted_layout = QHBoxLayout(self.attempted_widget)
-        attempted_layout.setContentsMargins(0, 4, 0, 0)  # Reduced top margin
-        attempted_layout.setSpacing(4)  # Reduced from 6
+        attempted_layout.setContentsMargins(0, 6, 0, 0)  # Increased top margin
+        attempted_layout.setSpacing(10)  # Increased from 4 to 10 for more space
         attempted_layout.setAlignment(Qt.AlignCenter)
         
         self.player_indicators = {}
         for i in range(1, 5):
             indicator = QLabel(f"P{i}")
             indicator.setAlignment(Qt.AlignCenter)
-            indicator.setFixedSize(32, 32)  # Reduced from 35x35
+            indicator.setFixedSize(38, 38)  # Increased from 32x32
             indicator.setStyleSheet(
                 "QLabel { "
                 "background: rgba(255, 255, 255, 0.1); "
                 "border: 2px solid rgba(255, 255, 255, 0.3); "
-                "border-radius: 16px; "  # Updated for new size
+                "border-radius: 19px; "  # Updated for new size
                 "color: rgba(255, 255, 255, 0.5); "
-                "font-size: 10px; font-weight: 900; "  # Slightly smaller
+                "font-size: 11px; font-weight: 900; "  # Slightly bigger
                 "}"
             )
             self.player_indicators[i] = indicator

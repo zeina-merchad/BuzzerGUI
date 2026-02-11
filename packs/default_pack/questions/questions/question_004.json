@@ -1,0 +1,26 @@
+{
+  "id": "demo4",
+  "round": 1,
+  "text": "Which country hosted the 2018 World Cup?",
+  "options": [
+    "Brazil",
+    "Russia",
+    "Qatar",
+    "France"
+  ],
+  "correct_index": 1,
+  "media": {
+    "type": "none",
+    "path": null
+  },
+  "difficulty": "medium",
+  "tags": [
+    "world_cup",
+    "history"
+  ],
+  "points_first_attempt": 5,
+  "points_second_attempt": 3,
+  "points_third_attempt": 2,
+  "points_fourth_attempt": 1,
+  "max_attempts": 4
+}

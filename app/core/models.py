@@ -61,12 +61,12 @@ class Question:
         if self.round < 1:
             raise ValueError("Round must be >= 1")
         
-        if self.max_attempts < 1 or self.max_attempts > 3:
-            raise ValueError("max_attempts must be between 1 and 3")
+        if self.max_attempts < 1 or self.max_attempts > 4:
+            raise ValueError("max_attempts must be between 1 and 4")
         
-        # Validate points are non-negative
+        # Validate points are non-negative (all 4 attempts)
         if any(p < 0 for p in [self.points_first_attempt, self.points_second_attempt,
-                                self.points_third_attempt]):
+                                self.points_third_attempt, self.points_fourth_attempt]):
             raise ValueError("Points cannot be negative")
     
     def get_points_for_attempt(self, attempt_number: int) -> int:
@@ -123,12 +123,19 @@ class GameConfig:
     pack_dir: Path              # absolute path to pack root
     
     # Game modes
-    enable_cascading_attempts: bool = True   # NEW: Enable multiple attempts with decreasing points
+    enable_cascading_attempts: bool = True   # Enable multiple attempts with decreasing points
     penalty_for_wrong: int = 0               # Points deducted for wrong answer
     bonus_for_speed: bool = False            # Bonus points for fast answers
     
     # Timer behavior during cascading attempts
     reset_timer_each_attempt: bool = False   # If True, timer resets for each new attempt
+    
+    # NEW: Global scoring defaults (used when creating new questions)
+    points_first_attempt_default: int = 3
+    points_second_attempt_default: int = 2
+    points_third_attempt_default: int = 1
+    points_fourth_attempt_default: int = 0
+    max_attempts_default: int = 3
     
     def validate(self) -> tuple[bool, str]:
         """Validate configuration"""

@@ -21,5 +21,6 @@
   "points_first_attempt": 2,
   "points_second_attempt": 2,
   "points_third_attempt": 1,
-  "max_attempts": 3
+  "max_attempts": 3,
+  "enabled": true
 }

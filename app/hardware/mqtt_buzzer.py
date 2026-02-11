@@ -1,8 +1,3 @@
-"""
-Enhanced MQTT Buzzer Backend with Cascading Attempts Support
-Integrates ESP32 hardware buzzers with the cascading points system
-"""
-
 import paho.mqtt.client as mqtt
 import json
 import time
@@ -85,12 +80,20 @@ class MQTTBuzzerBackend:
         self.connected_players: Dict[int, float] = {}  # player_id -> last_seen_time
         self.player_latency: Dict[int, List[int]] = {}  # player_id -> [latencies]
         
+        # NEW: Heartbeat/Ping system for liveliness checking
+        self.heartbeat_interval = 5.0  # Ping every 5 seconds
+        self.heartbeat_timeout = 15.0  # Consider dead after 15 seconds
+        self.last_heartbeat_sent: Dict[int, float] = {}  # player_id -> last_ping_time
+        self.last_heartbeat_received: Dict[int, float] = {}  # player_id -> last_pong_time
+        self.awaiting_pong: Dict[int, bool] = {}  # player_id -> waiting for response
+        
         # Event callbacks
         self.on_buzz_callback: Optional[Callable[[BuzzEvent], None]] = None
         self.on_answer_callback: Optional[Callable[[AnswerEvent], None]] = None
         self.on_player_connected_callback: Optional[Callable[[int], None]] = None
         self.on_player_disconnected_callback: Optional[Callable[[int], None]] = None
         self.on_state_change_callback: Optional[Callable[[BuzzerState], None]] = None
+        self.on_player_unresponsive_callback: Optional[Callable[[int], None]] = None  # NEW
     
     # ========================================================================
     # CONNECTION MANAGEMENT
@@ -99,7 +102,7 @@ class MQTTBuzzerBackend:
     def connect(self) -> bool:
         """Connect to MQTT broker"""
         try:
-            print(f"🔌 Connecting to MQTT broker at {self.broker_host}:{self.broker_port}...")
+            print(f" Connecting to MQTT broker at {self.broker_host}:{self.broker_port}...")
             self.client.connect(self.broker_host, self.broker_port, 60)
             self.client.loop_start()
             
@@ -109,20 +112,20 @@ class MQTTBuzzerBackend:
                 time.sleep(0.1)
             
             if self.connected:
-                print("✓ MQTT backend connected successfully!")
+                print(" MQTT backend connected successfully!")
                 return True
             else:
-                print("✗ MQTT connection timeout")
+                print(" MQTT connection timeout")
                 return False
                 
         except Exception as e:
-            print(f"✗ MQTT connection failed: {e}")
+            print(f" MQTT connection failed: {e}")
             return False
     
     def disconnect(self):
         """Disconnect from MQTT broker"""
         if self.connected:
-            print("🔌 Disconnecting from MQTT broker...")
+            print(" Disconnecting from MQTT broker...")
             self.client.loop_stop()
             self.client.disconnect()
             self.connected = False
@@ -132,23 +135,24 @@ class MQTTBuzzerBackend:
         if rc == 0:
             self.connected = True
             self.connection_time = time.time()
-            print("✓ MQTT broker connected (rc=0)")
+            print("✅ MQTT broker connected (rc=0)")
             
             # Subscribe to all buzzer topics
             client.subscribe("fbz/buzzer/+/buzz")
             client.subscribe("fbz/buzzer/+/answer")
-            print("✓ Subscribed to buzzer topics")
+            client.subscribe("fbz/buzzer/+/pong")  # NEW: Subscribe to heartbeat responses
+            print("✅ Subscribed to buzzer topics (buzz, answer, pong)")
         else:
-            print(f"✗ MQTT connection failed (rc={rc})")
+            print(f"❌ MQTT connection failed (rc={rc})")
             self.connected = False
     
     def _on_disconnect(self, client, userdata, rc):
         """MQTT disconnection callback"""
         self.connected = False
         if rc != 0:
-            print(f"⚠ MQTT unexpected disconnect (rc={rc})")
+            print(f" MQTT unexpected disconnect (rc={rc})")
         else:
-            print("✓ MQTT disconnected cleanly")
+            print(" MQTT disconnected cleanly")
     
     def _on_message(self, client, userdata, msg):
         """MQTT message callback - handles all incoming messages"""
@@ -156,7 +160,7 @@ class MQTTBuzzerBackend:
             topic = msg.topic
             payload = msg.payload.decode()
             
-            print(f"\n📥 RAW MESSAGE: {topic}")
+            print(f"\n RAW MESSAGE: {topic}")
             print(f"   Payload: {payload}")
             
             # Parse JSON payload
@@ -179,13 +183,18 @@ class MQTTBuzzerBackend:
             elif topic.endswith("/answer"):
                 print(f"   → Processing as ANSWER event")
                 self._handle_answer(player_id, data)
+            
+            # NEW: Handle heartbeat pong responses
+            elif topic.endswith("/pong"):
+                print(f"   → Processing as PONG (heartbeat response)")
+                self._handle_pong(player_id, data)
             else:
                 print(f"   → Unknown topic type")
                 
         except json.JSONDecodeError:
-            print(f"⚠ Invalid JSON in message: {msg.payload}")
+            print(f" Invalid JSON in message: {msg.payload}")
         except Exception as e:
-            print(f"⚠ Error processing message: {e}")
+            print(f" Error processing message: {e}")
             import traceback
             traceback.print_exc()
     
@@ -237,6 +246,92 @@ class MQTTBuzzerBackend:
         return sum(recent) / len(recent)
     
     # ========================================================================
+    # HEARTBEAT / LIVELINESS CHECKING
+    # ========================================================================
+    
+    def send_heartbeat(self, player_id: int):
+        """Send ping to specific player to check if alive"""
+        current_time = time.time()
+        
+        # Publish ping message to player
+        topic = f"fbz/game/ping/{player_id}"
+        payload = json.dumps({"timestamp": current_time})
+        
+        self.client.publish(topic, payload)
+        self.last_heartbeat_sent[player_id] = current_time
+        self.awaiting_pong[player_id] = True
+        
+        print(f"🏓 PING → Player {player_id}")
+    
+    def send_heartbeat_to_all(self):
+        """Send ping to all known players"""
+        # Ping all players we've seen before
+        all_players = set(range(1, 5))  # Players 1-4
+        
+        for player_id in all_players:
+            self.send_heartbeat(player_id)
+    
+    def _handle_pong(self, player_id: int, data: dict):
+        """Handle pong response from player"""
+        current_time = time.time()
+        
+        # Mark as received
+        self.last_heartbeat_received[player_id] = current_time
+        self.awaiting_pong[player_id] = False
+        
+        # Calculate round-trip time if we have send timestamp
+        if player_id in self.last_heartbeat_sent:
+            rtt = (current_time - self.last_heartbeat_sent[player_id]) * 1000  # ms
+            print(f"🏓 PONG ← Player {player_id} (RTT: {rtt:.1f}ms)")
+        else:
+            print(f"🏓 PONG ← Player {player_id}")
+    
+    def check_player_liveliness(self, player_id: int) -> bool:
+        """Check if player responded to recent ping"""
+        current_time = time.time()
+        
+        # If never received pong, check if we ever pinged them
+        if player_id not in self.last_heartbeat_received:
+            # If we've been waiting too long for first response
+            if player_id in self.last_heartbeat_sent:
+                time_waiting = current_time - self.last_heartbeat_sent[player_id]
+                if time_waiting > self.heartbeat_timeout:
+                    return False  # Unresponsive
+            return True  # Haven't checked yet
+        
+        # Check if last pong was recent enough
+        time_since_pong = current_time - self.last_heartbeat_received[player_id]
+        
+        if time_since_pong > self.heartbeat_timeout:
+            # Player hasn't responded in a while
+            return False
+        
+        return True
+    
+    def check_all_players_liveliness(self) -> Dict[int, bool]:
+        """Check liveliness of all players, return dict of player_id -> is_alive"""
+        results = {}
+        
+        for player_id in range(1, 5):
+            results[player_id] = self.check_player_liveliness(player_id)
+        
+        return results
+    
+    def get_unresponsive_players(self) -> List[int]:
+        """Get list of players that are not responding to pings"""
+        unresponsive = []
+        
+        for player_id in range(1, 5):
+            if not self.check_player_liveliness(player_id):
+                unresponsive.append(player_id)
+                
+                # Trigger callback if set
+                if self.on_player_unresponsive_callback:
+                    self.on_player_unresponsive_callback(player_id)
+        
+        return unresponsive
+    
+    # ========================================================================
     # BUZZ HANDLING - CASCADING ATTEMPTS
     # ========================================================================
     
@@ -255,27 +350,38 @@ class MQTTBuzzerBackend:
         # (Typical LAN latency is <50ms anyway)
         
         print(f"\n🔔 BUZZ from Player {player_id}")
-        
+    
         # Check if buzz is valid
         if self.state != BuzzerState.ACTIVE:
-            print(f"  ⚠ Buzz rejected: State is {self.state.value}, not ACTIVE")
+            print(f"⚠️  Buzz rejected: State is {self.state.value}, not ACTIVE")
+            print(f"   → Admin must unlock buzzers first!")
             return
-        
+    
         if player_id in self.eliminated_players:
-            print(f"  ⚠ Buzz rejected: Player {player_id} already eliminated")
+            print(f"⚠️  Buzz rejected: Player {player_id} already eliminated")
             return
         
         if self.attempt_count >= self.max_attempts:
-            print(f"  ⚠ Buzz rejected: Max attempts ({self.max_attempts}) reached")
+            print(f"⚠️  Buzz rejected: Max attempts ({self.max_attempts}) reached")
             return
+        
+        # Check if this player already buzzed in this attempt
+        # (prevents duplicate buzz processing)
+        for existing_buzz in self.buzz_order:
+            if existing_buzz.player_id == player_id:
+                # Check if this is a duplicate (same timestamp within 100ms)
+                time_diff = abs(buzz_event.timestamp_ms - existing_buzz.timestamp_ms)
+                if time_diff < 100:
+                    print(f"⚠️  Buzz rejected: Duplicate buzz from Player {player_id}")
+                    return
         
         # Accept the buzz
         self.buzz_order.append(buzz_event)
         self.attempt_count += 1
         self.locked_player = player_id
         
-        print(f"  ✓ Buzz accepted! Attempt {self.attempt_count}/{self.max_attempts}")
-        print(f"  ✓ Player {player_id} locked in")
+        print(f"✅ Buzz accepted! Attempt {self.attempt_count}/{self.max_attempts}")
+        print(f"   Player {player_id} locked in")
         
         # Lock the game for this player
         self._change_state(BuzzerState.LOCKED)
@@ -298,29 +404,29 @@ class MQTTBuzzerBackend:
             server_received_ms=server_received_ms
         )
         
-        print(f"\n📝 ANSWER from Player {player_id}: {answer}")
-        print(f"   Current state: {self.state.value}")
-        print(f"   Locked player: {self.locked_player}")
-        print(f"   Already answered: {player_id in self.answered_players}")
+        print(f"\n ANSWER from Player {player_id}: {answer}")
+        print(f"Current state: {self.state.value}")
+        print(f"Locked player: {self.locked_player}")
+        print(f"Already answered: {player_id in self.answered_players}")
         
         # Check if answer is valid
         if self.state != BuzzerState.LOCKED:
-            print(f"  ❌ REJECTED: State is {self.state.value}, need LOCKED")
+            print(f"REJECTED: State is {self.state.value}, need LOCKED")
             return
         
         if player_id != self.locked_player:
-            print(f"  ❌ REJECTED: Player {player_id} not locked (locked player is {self.locked_player})")
+            print(f"REJECTED: Player {player_id} not locked (locked player is {self.locked_player})")
             return
         
         if player_id in self.answered_players:
-            print(f"  ❌ REJECTED: Player {player_id} already answered")
+            print(f"REJECTED: Player {player_id} already answered")
             return
         
         # Accept the answer
         self.answered_players[player_id] = answer_event
         self._change_state(BuzzerState.ANSWERED)
         
-        print(f"  ✅ ANSWER ACCEPTED from Player {player_id}: {answer}")
+        print(f"ANSWER ACCEPTED from Player {player_id}: {answer}")
         
         # Trigger callback
         if self.on_answer_callback:
@@ -331,10 +437,11 @@ class MQTTBuzzerBackend:
     # ========================================================================
     
     def start_question(self, question_id: str, max_attempts: int = 3):
-        """Start a new question - unlock buzzers"""
+        """Start a new question - KEEP LOCKED until admin unlocks"""
         print(f"\n{'='*50}")
-        print(f"🎯 NEW QUESTION: {question_id}")
+        print(f"🔒 NEW QUESTION: {question_id}")
         print(f"   Max attempts: {max_attempts}")
+        print(f"   Status: LOCKED (waiting for admin to unlock)")
         print(f"{'='*50}\n")
         
         self.current_question_id = question_id
@@ -347,35 +454,47 @@ class MQTTBuzzerBackend:
         self.answered_players.clear()
         self.eliminated_players.clear()
         
+        # DO NOT UNLOCK - Keep buzzers locked
+        # Admin must manually unlock for each question
+        # self._publish_reset()  # ❌ REMOVED - Don't auto-unlock
+        self._change_state(BuzzerState.IDLE)  # Change to IDLE, not ACTIVE
+    
+    def unlock_buzzers(self):
+        """Manually unlock buzzers - called by admin"""
+        print(f"\n{'='*50}")
+        print(f"🔓 ADMIN UNLOCKED BUZZERS")
+        print(f"   Players can now buzz in!")
+        print(f"{'='*50}\n")
+        
         # Unlock all buzzers
         self._publish_reset()
         self._change_state(BuzzerState.ACTIVE)
     
     def mark_answer_wrong(self, player_id: int):
         """Mark a player's answer as wrong - allow next attempt"""
-        print(f"✗ Player {player_id} answered WRONG")
+        print(f"Player {player_id} answered WRONG")
         
         self.eliminated_players.add(player_id)
         self.locked_player = None
         
         if self.attempt_count < self.max_attempts:
-            print(f"  → Unlocking for next attempt ({self.attempt_count}/{self.max_attempts})")
+            print(f"Unlocking for next attempt ({self.attempt_count}/{self.max_attempts})")
             self._publish_reset()
             self._change_state(BuzzerState.ACTIVE)
         else:
-            print(f"  → Max attempts reached, question ends")
+            print(f"Max attempts reached, question ends")
             self._change_state(BuzzerState.RESULT_SHOWN)
     
     def mark_answer_correct(self, player_id: int):
         """Mark a player's answer as correct - question ends"""
-        print(f"✓ Player {player_id} answered CORRECT!")
+        print(f"Player {player_id} answered CORRECT!")
         self._change_state(BuzzerState.RESULT_SHOWN)
     
     def end_question(self):
         """End the current question"""
-        print(f"\n🏁 Question ended")
-        print(f"   Total attempts: {self.attempt_count}")
-        print(f"   Players answered: {len(self.answered_players)}")
+        print(f"\nQuestion ended")
+        print(f"Total attempts: {self.attempt_count}")
+        print(f"Players answered: {len(self.answered_players)}")
         
         self._change_state(BuzzerState.IDLE)
         self.current_question_id = None
@@ -402,18 +521,18 @@ class MQTTBuzzerBackend:
     def _publish_lock(self, player_id: int):
         """Lock game for specific player"""
         self.client.publish("fbz/game/lock", str(player_id))
-        print(f"  📤 Published lock for Player {player_id}")
+        print(f"Published lock for Player {player_id}")
     
     def _publish_reset(self):
         """Reset/unlock game for new question or next attempt"""
         self.client.publish("fbz/game/reset", "")
-        print(f"  📤 Published reset (unlock)")
+        print(f"Published reset (unlock)")
     
     def _change_state(self, new_state: BuzzerState):
         """Change backend state"""
         old_state = self.state
         self.state = new_state
-        print(f"  🔄 State: {old_state.value} → {new_state.value}")
+        print(f"   State: {old_state.value} → {new_state.value}")
         
         if self.on_state_change_callback:
             self.on_state_change_callback(new_state)
