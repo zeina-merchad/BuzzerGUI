@@ -1,5 +1,6 @@
 from PySide6.QtCore import QObject, Signal, QTimer
 
+
 class CountdownTimer(QObject):
     changed = Signal(int)   # remaining_ms
     ended = Signal()
@@ -29,9 +30,18 @@ class CountdownTimer(QObject):
             self._timer.start()
 
     def stop(self) -> None:
+        """
+        Stop the timer and reset the remaining time.
+
+        FIX #8: The previous version emitted changed(0) here, which caused
+        the TimerWidget to briefly flash "00s" whenever a player buzzed in
+        (because the engine calls timer.stop() on buzz before starting the
+        answer timer).  We no longer emit on stop() — the widget tracks the
+        last value from tick-based changed signals and therefore stays on the
+        last displayed second rather than jumping to zero.
+        """
         self._timer.stop()
         self._remaining_ms = 0
-        self.changed.emit(self._remaining_ms)
 
     def _on_tick(self) -> None:
         self._remaining_ms -= self._tick_ms
