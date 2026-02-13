@@ -74,14 +74,7 @@ def main():
                              f"Failed to create application window:\n{e}")
         mqtt_backend.disconnect()
         sys.exit(1)
-
-    # ── WIRE AdminDashboard → GameEngine ────────────────────────────────────
-    # AppWindow.admin_dashboard is a lazy property that wires
-    # questions_changed → engine.load_questions internally when first accessed.
-    # We only need to expose the dashboard reference here for external use;
-    # FIX #3: removed the duplicate questions_changed.connect(engine.load_questions)
-    # that previously lived here alongside the one inside AppWindow, which caused
-    # load_questions to be called twice every time the admin changed questions.
+        
     try:
         dashboard = window.admin_dashboard  # triggers lazy creation + internal wiring
 

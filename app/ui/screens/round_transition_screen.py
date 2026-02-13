@@ -271,10 +271,17 @@ class RoundTransitionScreen(QWidget):
             4:  "4️⃣"
         }
         
-        # Update standings
+        # Update standings AND re-order the grid so rank 1 is always top-left,
+        # rank 2 top-right, rank 3 bottom-left, rank 4 bottom-right.
+        grid_positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
+
         for position, (player_id, score) in enumerate(ranked_players, start=1):
             widgets = self.player_standing_widgets[player_id]
             
+            # Move card to the rank-appropriate grid cell
+            row, col = grid_positions[position - 1]
+            self.standings_grid.addWidget(widgets['card'], row, col)
+
             # Update position
             widgets['position'].setText(position_emojis[position])
             

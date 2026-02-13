@@ -290,17 +290,22 @@ class WinnerScreen(QWidget):
             f"background: transparent; padding: 20px;"
         )
         
-        # Update all player scores with rankings
+        # Update all player scores with rankings, re-ordered in the grid by rank
         rank_medals = {
             1: "🥇",
             2: "🥈", 
             3: "🥉",
             4: "4️⃣"
         }
-        
+        grid_positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
+
         for rank, (player_id, score) in enumerate(ranked_players, start=1):
             widgets = self.player_score_widgets[player_id]
-            
+
+            # Move card to rank-appropriate grid cell
+            row, col = grid_positions[rank - 1]
+            self.scores_grid.addWidget(widgets['card'], row, col)
+
             # Update rank badge
             widgets['rank'].setText(rank_medals[rank])
             
@@ -329,15 +334,24 @@ class WinnerScreen(QWidget):
         self._animate_trophy()
     
     def _animate_trophy(self):
-        """Pulse animation for trophy"""
-        # Simple pulse effect using timer
+        """Pulse animation for trophy — stops after 12 pulses."""
         self.pulse_state = 0
+        self._pulse_count = 0
         self.pulse_timer = QTimer()
         self.pulse_timer.timeout.connect(self._pulse_trophy)
-        self.pulse_timer.start(500)  # Pulse every 500ms
+        self.pulse_timer.start(500)
     
     def _pulse_trophy(self):
-        """Pulse the trophy between two sizes"""
+        """Pulse the trophy between two sizes, stop after 12 pulses."""
+        self._pulse_count += 1
+        if self._pulse_count > 12:
+            self.pulse_timer.stop()
+            # Settle on the normal size
+            self.trophy.setStyleSheet(
+                "font-size: 120px; background: transparent; padding: 20px;"
+            )
+            return
+
         if self.pulse_state == 0:
             self.trophy.setStyleSheet(
                 "font-size: 140px; background: transparent; padding: 20px;"

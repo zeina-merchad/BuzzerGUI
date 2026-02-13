@@ -256,14 +256,84 @@ class MQTTBuzzerBackend:
         now = time.time()
         self.last_heartbeat_received[player_id] = now
         self.awaiting_pong[player_id] = False
+        # Also refresh connected_players so the fallback path sees this too
+        self.connected_players[player_id] = now
 
     def check_player_liveliness(self, player_id: int) -> bool:
+        """
+        Return True if the player is considered alive.
+
+        Priority order:
+        1. If a pong arrived after the most recent ping → alive.
+        2. If we are still awaiting a pong for this cycle (sent but not yet
+           received) → fall back to last_seen time in connected_players.
+           The device may simply be slow to respond (e.g. waking from sleep);
+           if it was seen recently it is treated as alive so we don't
+           incorrectly block the UNLOCK button.
+        3. If a ping was sent long ago with no pong and no recent activity
+           → dead.
+        """
         now = time.time()
-        if player_id not in self.last_heartbeat_received:
-            if player_id in self.last_heartbeat_sent and (now - self.last_heartbeat_sent[player_id]) > self.heartbeat_timeout:
-                return False
+        ping_sent_at = self.last_heartbeat_sent.get(player_id)
+        pong_received_at = self.last_heartbeat_received.get(player_id)
+
+        # Case 1: pong arrived after the most recent ping → definitively alive
+        if ping_sent_at is not None and pong_received_at is not None:
+            if pong_received_at >= ping_sent_at:
+                return True
+
+        # Case 2: still awaiting pong → fall back to last-seen time
+        if self.awaiting_pong.get(player_id, False):
+            last_seen = self.connected_players.get(player_id)
+            if last_seen is not None:
+                # Consider alive if seen within 2× heartbeat_timeout
+                return (now - last_seen) < (self.heartbeat_timeout * 2)
+            # Never seen at all — unknown, assume alive so we don't block unlock
             return True
-        return (now - self.last_heartbeat_received[player_id]) < self.heartbeat_timeout
+
+        # Case 3: no ping sent yet for this player
+        if ping_sent_at is None:
+            last_seen = self.connected_players.get(player_id)
+            if last_seen is not None:
+                return (now - last_seen) < self.heartbeat_timeout
+            return True  # never pinged → don't penalise
+
+        # Case 4: ping sent, pong never arrived, not currently awaiting
+        # (awaiting_pong was cleared without a real pong — shouldn't happen,
+        # but treat as a stale ping: use last-seen as fallback)
+        last_seen = self.connected_players.get(player_id)
+        if last_seen is not None:
+            return (now - last_seen) < self.heartbeat_timeout
+        return False
+
+    def send_heartbeat_to_all(self, timeout_seconds: int = 10) -> None:
+        """Ping only the players that are already connected (have been seen recently).
+        Players that have never connected are skipped entirely.
+        """
+        connected = self.get_connected_players(timeout_seconds=timeout_seconds)
+        if not connected:
+            print("[MQTT] send_heartbeat_to_all: no connected players to ping")
+            return
+        for player_id in connected:
+            self.send_heartbeat(player_id)
+        print(f"[MQTT] 📡 Pinged connected players: {connected}")
+
+    def check_all_players_liveliness(self) -> Dict[int, bool]:
+        """Return a dict of {player_id: is_alive} for all known connected players."""
+        connected = self.get_connected_players(timeout_seconds=60)
+        return {pid: self.check_player_liveliness(pid) for pid in connected}
+
+    def all_pings_resolved(self, timeout_seconds: int = 10) -> bool:
+        """
+        Return True when every recently-connected player has either:
+        - responded with a pong, OR
+        - been waiting long enough that we've fallen back to last-seen logic.
+        Used by HostScreen to know when it can stop retrying.
+        """
+        connected = self.get_connected_players(timeout_seconds=timeout_seconds)
+        if not connected:
+            return True  # nothing to wait for
+        return not any(self.awaiting_pong.get(pid, False) for pid in connected)
 
     # =====================================================================
     # BUZZ / ANSWER HANDLING (MQTT thread)

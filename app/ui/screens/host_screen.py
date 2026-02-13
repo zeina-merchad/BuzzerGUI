@@ -19,6 +19,98 @@ from app.ui.widgets.cascading_widget import CascadingAttemptsWidget
 from app.ui.screens.winner_screen import WinnerScreen
 from app.ui.screens.round_transition_screen import RoundTransitionScreen
 
+# Remote control key bindings (Rii i7 via USB dongle)
+try:
+    from app.ui.remote_config import REMOTE_KEYS, REQUIRE_MODIFIER, MODIFIER_KEY
+except ImportError:
+    # Fallback defaults if remote_config.py is not yet present
+    REMOTE_KEYS = {
+        "start_game":     Qt.Key.Key_MediaPlay,
+        "unlock_buzzers": Qt.Key.Key_Return,
+        "next_question":  Qt.Key.Key_MediaNext,
+        "reset_game":     Qt.Key.Key_MediaStop,
+        "bonus_point":    Qt.Key.Key_HomePage,
+    }
+    REQUIRE_MODIFIER = False
+    MODIFIER_KEY = Qt.KeyboardModifier.NoModifier
+
+
+class RemoteKeyHandler:
+    """
+    Mixin that adds Rii i7 remote control support to HostScreen.
+
+    Reads key bindings from remote_config.py (or the fallback dict above).
+    Call _handle_remote_key(event) from keyPressEvent.
+
+    Button -> method mapping:
+      start_game      -> _start_game()
+      unlock_buzzers  -> _unlock_buzzers()
+      next_question   -> _load_next_question()
+      reset_game      -> (double-press guarded to prevent accidents)
+      bonus_point     -> _award_bonus_point()
+    """
+
+    def _handle_remote_key(self, event) -> bool:
+        """
+        Handle a key event from the remote.
+        Returns True if the key was consumed, False otherwise.
+        """
+        if REQUIRE_MODIFIER and not (event.modifiers() & MODIFIER_KEY):
+            return False
+
+        key = event.key()
+
+        action = None
+        for action_name, bound_key in REMOTE_KEYS.items():
+            if key == bound_key:
+                action = action_name
+                break
+
+        if action is None:
+            return False
+
+        print(f"[REMOTE] key={key:#010x} -> action='{action}'")
+
+        if action == "start_game":
+            if self.btn_start_game.isVisible() and self.btn_start_game.isEnabled():
+                self._start_game()
+
+        elif action == "unlock_buzzers":
+            if self.btn_unlock.isVisible() and self.btn_unlock.isEnabled():
+                self._unlock_buzzers()
+
+        elif action == "next_question":
+            if self.btn_next.isVisible() and self.btn_next.isEnabled():
+                self._load_next_question()
+
+        elif action == "reset_game":
+            # Double-press within 2s required to prevent accidental resets
+            if not hasattr(self, "_remote_reset_armed"):
+                self._remote_reset_armed = False
+            if not self._remote_reset_armed:
+                self._remote_reset_armed = True
+                self.status_label.setText("Press RESET again within 2s to confirm")
+                self.status_label.setStyleSheet(
+                    "font-size: 14px; font-weight: 700; color: rgba(255, 193, 7, 1.0); "
+                    "background: rgba(255, 193, 7, 0.2); "
+                    "padding: 12px 20px; border: 2px solid #ffc107; "
+                    "border-radius: 8px;"
+                )
+                QTimer.singleShot(2000, self._disarm_remote_reset)
+            else:
+                self._remote_reset_armed = False
+                self._reset_game()
+
+        elif action == "bonus_point":
+            if self.game_started:
+                self._award_bonus_point()
+
+        return True
+
+    def _disarm_remote_reset(self):
+        """Cancel the double-press reset guard after timeout."""
+        self._remote_reset_armed = False
+
 
 class FlashOverlay(QLabel):
     """Full-screen overlay label for quick feedback flashes (CORRECT / WRONG)."""
@@ -254,7 +346,7 @@ class CornerPlayerCard(QFrame):
         self.set_score(self._score)
 
 
-class HostScreen(QWidget):
+class HostScreen(RemoteKeyHandler, QWidget):
     """Main game screen with auto-judging from ESP32 answer buttons"""
 
     def __init__(self, engine: GameEngine, mqtt_backend: MQTTBuzzerBackend):
@@ -561,6 +653,11 @@ class HostScreen(QWidget):
         super().resizeEvent(event)
         if hasattr(self, "correct_flash"):
             self.correct_flash.resize_to_parent()
+
+    def keyPressEvent(self, event):
+        """Route remote control key presses; fall back to Qt default."""
+        if not self._handle_remote_key(event):
+            super().keyPressEvent(event)
 
     def _on_engine_question_advanced(self):
         self._prepare_current_question_ui()
@@ -958,17 +1055,47 @@ class HostScreen(QWidget):
             q = self.engine.current_question()
             self.mqtt_backend.start_question(question_id=q.id, max_attempts=q.max_attempts)
 
-            # ✅ HEARTBEAT BEFORE QUESTION (non-blocking)
+            # ✅ HEARTBEAT BEFORE QUESTION — retry loop instead of fixed 800ms wait
+            # Pings all connected buzzers, then polls up to MAX_PING_RETRIES times
+            # at PING_POLL_INTERVAL_MS each, stopping as soon as all pongs are back
+            # (or retries run out). Prevents false "no response" on slow-waking devices.
+            self._ping_retry_count = 0
+            self._ping_max_retries = 5
+            self._ping_poll_ms = 500
+
             self.status_label.setText("📡 Pinging connected buzzers...")
             self.mqtt_backend.send_heartbeat_to_all(timeout_seconds=10)
-            QTimer.singleShot(800, self._apply_heartbeat_results)
+            QTimer.singleShot(self._ping_poll_ms, self._poll_heartbeat_results)
 
         self._render_question()
         self._render_scores()
         self.btn_next.setEnabled(True)
 
+    def _poll_heartbeat_results(self):
+        """
+        Called repeatedly (up to _ping_max_retries times) after pings are sent.
+        Stops early as soon as all known players have responded.
+        Falls through to _apply_heartbeat_results once done.
+        """
+        if not self.mqtt_backend:
+            return
+
+        self._ping_retry_count += 1
+        all_resolved = self.mqtt_backend.all_pings_resolved(timeout_seconds=10)
+
+        if all_resolved or self._ping_retry_count >= self._ping_max_retries:
+            # All pongs in, or we've waited long enough — apply final result
+            if not all_resolved:
+                print(f"[PING] ⚠ {self._ping_retry_count} polls elapsed, some pongs still pending — applying anyway")
+            self._apply_heartbeat_results()
+        else:
+            # Still waiting on at least one pong — try again shortly
+            print(f"[PING] Waiting for pongs... (poll {self._ping_retry_count}/{self._ping_max_retries})")
+            self.status_label.setText(f"📡 Waiting for buzzers... ({self._ping_retry_count}/{self._ping_max_retries})")
+            QTimer.singleShot(self._ping_poll_ms, self._poll_heartbeat_results)
+
     def _apply_heartbeat_results(self):
-        """Check heartbeat results and update UI without freezing."""
+        """Apply final heartbeat results to the UI once polling is complete."""
         if not self.mqtt_backend:
             return
 
