@@ -421,8 +421,8 @@ def list_available_packs(packs_dir: Path) -> List[Tuple[str, Path]]:
                     data = _read_json(pack_json)
                     name = data.get("name", item.name)
                     packs.append((name, item))
-                except Exception:
-                    # FIX #11: don't swallow KeyboardInterrupt with bare except
+                except (PackError, json.JSONDecodeError, OSError, KeyError) as e:
+                    print(f"[PACKS] ⚠  Skipping {item.name}: {e}")
                     continue
 
     return sorted(packs, key=lambda x: x[0])

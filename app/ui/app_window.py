@@ -62,6 +62,10 @@ class AppWindow(QMainWindow):
             self._admin_window.questions_changed.connect(self._on_questions_changed)
             self._admin_window.config_changed.connect(self._on_config_changed)
 
+            # FIX L: keep AdminDashboard informed of game-active state so that
+            # question-checkbox toggles don't fire load_questions() mid-game.
+            self.engine.phase_changed.connect(self._on_phase_changed_for_admin)
+
         return self._admin_window
 
     def _show_admin_dashboard(self):
@@ -92,6 +96,16 @@ class AppWindow(QMainWindow):
         """Update engine config live (no score/question reset)."""
         self.engine.update_config(new_config)
         print(f"[OK] Config updated: {new_config.name}")
+
+    def _on_phase_changed_for_admin(self, phase: str) -> None:
+        # FIX L: keep AdminDashboard informed of whether a game is running.
+        # GAME_END and IDLE (pre-game) mean not active; anything else is active.
+        # This prevents _tog() calling load_questions() mid-game, which would
+        # silently wipe scores and reset current_q_idx.
+        if self._admin_window is None:
+            return
+        active = phase not in ("IDLE", "GAME_END")
+        self._admin_window.set_game_active(active)
 
     def apply_config(self, new_config: GameConfig):
         """Public alias — called from main.py wiring."""

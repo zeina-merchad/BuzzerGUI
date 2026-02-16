@@ -1,369 +1,370 @@
 """
 Winner Screen - Game End Celebration
-Shows final scores, winner, and options to play again or exit
+Compact centered popup dialog.
 """
 
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFrame, QGridLayout
+    QDialog, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QFrame, QGridLayout, QWidget
 )
-from PySide6.QtGui import QFont
 
 
-class WinnerScreen(QWidget):
-    """Full-screen winner celebration screen"""
-    
-    def __init__(self):
-        super().__init__()
-        
-        # Team colors
+class WinnerScreen(QDialog):
+    """Compact centered popup shown at game end."""
+
+    DIALOG_W = 860
+    DIALOG_H = 700
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setWindowFlags(
+            Qt.Dialog
+            | Qt.FramelessWindowHint
+            | Qt.WindowStaysOnTopHint
+        )
+        self.setFixedSize(self.DIALOG_W, self.DIALOG_H)
+
         self.team_colors = {
-            1: "#e74c3c",  # Red
-            2: "#3498db",  # Blue
-            3: "#2ecc71",  # Green
-            4: "#f39c12",  # Orange
+            1: "#e74c3c",
+            2: "#3498db",
+            3: "#2ecc71",
+            4: "#f39c12",
         }
-        
-        # Dark background with subtle gradient
+
         self.setStyleSheet(
-            "QWidget { "
+            "QDialog { "
             "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 #0a0e27, stop:1 #1a1f3a); "
+            "stop:0 #0d1b2a, stop:1 #1a2a3a); "
+            "border: 3px solid rgba(255,215,0,0.5); "
+            "border-radius: 18px; "
             "}"
         )
-        
-        # Main layout
+
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(40, 40, 40, 40)
-        main_layout.setSpacing(30)
-        
-        # =====================================================================
-        # TROPHY AND TITLE
-        # =====================================================================
-        
-        header = QWidget()
-        header.setStyleSheet("QWidget { background: transparent; }")
-        header_layout = QVBoxLayout(header)
-        header_layout.setSpacing(15)
-        
-        # Trophy emoji (animated)
+        main_layout.setContentsMargins(30, 22, 30, 22)
+        main_layout.setSpacing(14)
+
+        # ── Trophy + title row ────────────────────────────────────────────────
+        header_row = QHBoxLayout()
+        header_row.setSpacing(16)
+
         self.trophy = QLabel("🏆")
+        self.trophy.setFixedWidth(80)
         self.trophy.setAlignment(Qt.AlignCenter)
-        self.trophy.setStyleSheet(
-            "font-size: 120px; background: transparent; "
-            "padding: 20px;"
-        )
-        header_layout.addWidget(self.trophy)
-        
-        # Game Over title
-        title = QLabel("GAME OVER!")
-        title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet(
-            "font-size: 48px; font-weight: 900; color: #39FF14; "
+        self.trophy.setStyleSheet("font-size: 56px; background: transparent;")
+        header_row.addWidget(self.trophy)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+
+        game_over = QLabel("GAME OVER")
+        game_over.setStyleSheet(
+            "font-size: 13px; font-weight: 900; color: rgba(255,255,255,0.5); "
             "background: transparent; letter-spacing: 3px;"
         )
-        header_layout.addWidget(title)
-        
-        main_layout.addWidget(header)
-        
-        # =====================================================================
-        # WINNER ANNOUNCEMENT
-        # =====================================================================
-        
-        self.winner_frame = QFrame()
-        self.winner_frame.setStyleSheet(
-            "QFrame { "
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-            "stop:0 rgba(57, 255, 20, 0.2), "
-            "stop:0.5 rgba(255, 215, 0, 0.3), "
-            "stop:1 rgba(57, 255, 20, 0.2)); "
-            "border: 4px solid #ffd700; "
-            "border-radius: 20px; "
-            "padding: 30px; "
-            "}"
-        )
-        
-        winner_layout = QVBoxLayout(self.winner_frame)
-        winner_layout.setSpacing(10)
-        
-        winner_label = QLabel("👑 WINNER 👑")
-        winner_label.setAlignment(Qt.AlignCenter)
-        winner_label.setStyleSheet(
-            "font-size: 24px; font-weight: 900; color: #ffd700; "
+        title_col.addWidget(game_over)
+
+        self.winner_crown_label = QLabel("WINNER")
+        self.winner_crown_label.setStyleSheet(
+            "font-size: 32px; font-weight: 900; color: #ffd700; "
             "background: transparent; letter-spacing: 2px;"
         )
-        winner_layout.addWidget(winner_label)
-        
+        title_col.addWidget(self.winner_crown_label)
+
         self.winner_name = QLabel("PLAYER 1")
-        self.winner_name.setAlignment(Qt.AlignCenter)
         self.winner_name.setStyleSheet(
-            "font-size: 64px; font-weight: 900; color: white; "
-            "background: transparent; padding: 20px;"
+            "font-size: 42px; font-weight: 900; color: white; background: transparent;"
         )
-        winner_layout.addWidget(self.winner_name)
-        
-        self.winner_score = QLabel("15 POINTS")
-        self.winner_score.setAlignment(Qt.AlignCenter)
+        title_col.addWidget(self.winner_name)
+
+        self.winner_score = QLabel("0 POINTS")
         self.winner_score.setStyleSheet(
-            "font-size: 36px; font-weight: 700; color: #ffd700; "
-            "background: transparent;"
+            "font-size: 20px; font-weight: 700; color: #ffd700; background: transparent;"
         )
-        winner_layout.addWidget(self.winner_score)
-        
-        main_layout.addWidget(self.winner_frame)
-        
-        # =====================================================================
-        # FINAL SCORES - ALL PLAYERS
-        # =====================================================================
-        
-        scores_container = QFrame()
-        scores_container.setStyleSheet(
+        title_col.addWidget(self.winner_score)
+
+        header_row.addLayout(title_col, stretch=1)
+
+        # Wrap header in a gold frame
+        winner_frame = QFrame()
+        winner_frame.setStyleSheet(
             "QFrame { "
-            "background: rgba(20, 30, 45, 0.6); "
-            "border: 3px solid rgba(57, 255, 20, 0.3); "
-            "border-radius: 16px; "
-            "padding: 25px; "
-            "}"
+            "background: qlineargradient(x1:0,y1:0,x2:1,y2:0, "
+            "stop:0 rgba(57,255,20,0.15), stop:0.5 rgba(255,215,0,0.2), "
+            "stop:1 rgba(57,255,20,0.15)); "
+            "border: 2px solid #ffd700; border-radius: 14px; padding: 12px; }"
         )
-        
-        scores_layout = QVBoxLayout(scores_container)
-        scores_layout.setSpacing(15)
-        
+        QHBoxLayout(winner_frame)
+        winner_frame.layout().addLayout(header_row)
+        main_layout.addWidget(winner_frame)
+
+        # ── Final scores grid ─────────────────────────────────────────────────
+        scores_frame = QFrame()
+        scores_frame.setStyleSheet(
+            "QFrame { background: rgba(20,30,45,0.8); "
+            "border: 2px solid rgba(57,255,20,0.3); "
+            "border-radius: 14px; }"
+        )
+        scores_layout = QVBoxLayout(scores_frame)
+        scores_layout.setContentsMargins(16, 12, 16, 12)
+        scores_layout.setSpacing(10)
+
         scores_title = QLabel("FINAL SCORES")
         scores_title.setAlignment(Qt.AlignCenter)
         scores_title.setStyleSheet(
-            "font-size: 20px; font-weight: 900; color: white; "
-            "background: transparent; letter-spacing: 2px; "
-            "padding-bottom: 10px;"
+            "font-size: 14px; font-weight: 900; color: rgba(255,255,255,0.65); "
+            "background: transparent; letter-spacing: 2px;"
         )
         scores_layout.addWidget(scores_title)
-        
-        # Grid for player scores
+
         self.scores_grid = QGridLayout()
-        self.scores_grid.setSpacing(15)
+        self.scores_grid.setSpacing(10)
         self.scores_grid.setContentsMargins(0, 0, 0, 0)
-        
+
         self.player_score_widgets = {}
-        
+
         for i in range(4):
             player_id = i + 1
-            
-            # Player card
+            color = self.team_colors[player_id]
+
             card = QFrame()
+            card.setFixedHeight(66)
             card.setStyleSheet(
-                f"QFrame {{ "
-                f"background: rgba(30, 40, 55, 0.8); "
-                f"border-left: 5px solid {self.team_colors[player_id]}; "
-                f"border-radius: 10px; "
-                f"padding: 15px; "
-                f"}}"
+                f"QFrame {{ background: rgba(30,40,55,0.9); "
+                f"border-left: 5px solid {color}; "
+                f"border-radius: 10px; padding: 8px; }}"
             )
-            
+
             card_layout = QHBoxLayout(card)
-            card_layout.setSpacing(15)
-            
-            # Rank badge
+            card_layout.setSpacing(12)
+            card_layout.setContentsMargins(8, 4, 8, 4)
+
             rank_label = QLabel("#")
             rank_label.setAlignment(Qt.AlignCenter)
-            rank_label.setFixedSize(50, 50)
+            rank_label.setFixedSize(42, 42)
             rank_label.setStyleSheet(
-                f"font-size: 24px; font-weight: 900; "
-                f"color: white; "
-                f"background: {self.team_colors[player_id]}; "
-                f"border-radius: 25px;"
+                f"font-size: 18px; font-weight: 900; color: white; "
+                f"background: {color}; border-radius: 21px;"
             )
             card_layout.addWidget(rank_label)
-            
-            # Player name
+
             name_label = QLabel(f"PLAYER {player_id}")
             name_label.setStyleSheet(
-                "font-size: 20px; font-weight: 900; color: white; "
-                "background: transparent;"
+                "font-size: 16px; font-weight: 900; color: white; background: transparent;"
             )
             card_layout.addWidget(name_label, stretch=1)
-            
-            # Score
+
             score_label = QLabel("0 pts")
             score_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             score_label.setStyleSheet(
-                "font-size: 28px; font-weight: 900; color: #39FF14; "
-                "background: transparent; padding-right: 10px;"
+                "font-size: 24px; font-weight: 900; color: #39FF14; "
+                "background: transparent; padding-right: 6px;"
             )
             card_layout.addWidget(score_label)
-            
-            # Store references
+
             self.player_score_widgets[player_id] = {
                 'card': card,
                 'rank': rank_label,
-                'score': score_label
+                'score': score_label,
             }
-            
-            # Add to grid (2x2)
-            row = i // 2
-            col = i % 2
-            self.scores_grid.addWidget(card, row, col)
-        
+
+            self.scores_grid.addWidget(card, i // 2, i % 2)
+
         scores_layout.addLayout(self.scores_grid)
-        main_layout.addWidget(scores_container)
-        
-        # =====================================================================
-        # ACTION BUTTONS
-        # =====================================================================
-        
-        buttons_container = QWidget()
-        buttons_container.setStyleSheet("QWidget { background: transparent; }")
-        buttons_layout = QHBoxLayout(buttons_container)
-        buttons_layout.setSpacing(20)
-        
-        # Play Again button
-        self.btn_play_again = QPushButton("🔄 PLAY AGAIN")
-        self.btn_play_again.setFixedHeight(70)
+        main_layout.addWidget(scores_frame, stretch=1)
+
+        # ── Buttons ───────────────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(16)
+
+        self.btn_play_again = QPushButton("PLAY AGAIN")
+        self.btn_play_again.setFixedHeight(52)
         self.btn_play_again.setStyleSheet(
-            "QPushButton { "
-            "background: rgba(57, 255, 20, 0.3); "
-            "border: 3px solid #39FF14; "
-            "border-radius: 12px; "
-            "padding: 20px 40px; "
-            "font-size: 24px; "
-            "font-weight: 900; "
-            "color: white; "
-            "min-width: 250px; "
-            "}"
-            "QPushButton:hover { "
-            "background: rgba(57, 255, 20, 0.5); "
-            "border: 4px solid #39FF14; "
-            "}"
-            "QPushButton:pressed { background: rgba(57, 255, 20, 0.7); }"
+            "QPushButton { background: rgba(57,255,20,0.22); "
+            "border: 3px solid #39FF14; border-radius: 10px; "
+            "font-size: 18px; font-weight: 900; color: white; }"
+            "QPushButton:hover { background: rgba(57,255,20,0.42); }"
+            "QPushButton:pressed { background: rgba(57,255,20,0.62); }"
         )
-        buttons_layout.addWidget(self.btn_play_again)
-        
-        # Exit button
-        self.btn_exit = QPushButton("🚪 EXIT")
-        self.btn_exit.setFixedHeight(70)
+        btn_row.addWidget(self.btn_play_again)
+
+        self.btn_exit = QPushButton("EXIT")
+        self.btn_exit.setFixedHeight(52)
         self.btn_exit.setStyleSheet(
-            "QPushButton { "
-            "background: rgba(231, 76, 60, 0.3); "
-            "border: 3px solid #e74c3c; "
-            "border-radius: 12px; "
-            "padding: 20px 40px; "
-            "font-size: 24px; "
-            "font-weight: 900; "
-            "color: white; "
-            "min-width: 250px; "
-            "}"
-            "QPushButton:hover { "
-            "background: rgba(231, 76, 60, 0.5); "
-            "border: 4px solid #e74c3c; "
-            "}"
-            "QPushButton:pressed { background: rgba(231, 76, 60, 0.7); }"
+            "QPushButton { background: rgba(231,76,60,0.22); "
+            "border: 3px solid #e74c3c; border-radius: 10px; "
+            "font-size: 18px; font-weight: 900; color: white; }"
+            "QPushButton:hover { background: rgba(231,76,60,0.42); }"
+            "QPushButton:pressed { background: rgba(231,76,60,0.62); }"
         )
-        buttons_layout.addWidget(self.btn_exit)
-        
-        main_layout.addWidget(buttons_container)
-        
-        # Stretch factors
-        main_layout.setStretchFactor(header, 1)
-        main_layout.setStretchFactor(self.winner_frame, 1)
-        main_layout.setStretchFactor(scores_container, 2)
-        main_layout.setStretchFactor(buttons_container, 0)
-    
+        btn_row.addWidget(self.btn_exit)
+
+        main_layout.addLayout(btn_row)
+
+    # ── Centering ─────────────────────────────────────────────────────────────
+
+    def center_on_parent(self):
+        if self.parent():
+            pg = self.parent().geometry()
+            self.move(
+                pg.x() + (pg.width()  - self.width())  // 2,
+                pg.y() + (pg.height() - self.height()) // 2,
+            )
+        else:
+            from PySide6.QtGui import QGuiApplication
+            sg = QGuiApplication.primaryScreen().geometry()
+            self.move(
+                (sg.width()  - self.width())  // 2,
+                (sg.height() - self.height()) // 2,
+            )
+
+    # ── Data ──────────────────────────────────────────────────────────────────
+
     def set_results(self, scores: dict, winner_id: int):
-        """
-        Display final results
-        
-        Args:
-            scores: Dict of {player_id: score}
-            winner_id: ID of winning player
-        """
-        # Sort players by score (descending)
+        """Display final results with tie detection."""
         ranked_players = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        
-        # Set winner
-        winner_score = scores[winner_id]
-        self.winner_name.setText(f"PLAYER {winner_id}")
-        self.winner_score.setText(f"{winner_score} POINTS")
-        
-        # Highlight winner card with their color
-        winner_color = self.team_colors[winner_id]
-        self.winner_name.setStyleSheet(
-            f"font-size: 64px; font-weight: 900; color: {winner_color}; "
-            f"background: transparent; padding: 20px;"
-        )
-        
-        # Update all player scores with rankings, re-ordered in the grid by rank
-        rank_medals = {
-            1: "🥇",
-            2: "🥈", 
-            3: "🥉",
-            4: "4️⃣"
-        }
+
+        if not ranked_players:
+            self.winner_crown_label.setText("GAME OVER")
+            self.winner_name.setText("No scores")
+            self.winner_score.setText("0 POINTS")
+            return
+
+        top_score = ranked_players[0][1]
+        winners = [pid for pid, s in ranked_players if s == top_score] if top_score > 0 else []
+
+        if not winners:
+            self.winner_crown_label.setText("GAME OVER")
+            self.winner_crown_label.setStyleSheet(
+                "font-size: 32px; font-weight: 900; color: rgba(255,255,255,0.5); "
+                "background: transparent;"
+            )
+            self.winner_name.setText("No winner")
+            self.winner_name.setStyleSheet(
+                "font-size: 42px; font-weight: 900; color: rgba(255,255,255,0.4); "
+                "background: transparent;"
+            )
+        elif len(winners) > 1:
+            self.winner_crown_label.setText("IT'S A TIE!")
+            self.winner_crown_label.setStyleSheet(
+                "font-size: 32px; font-weight: 900; color: #5ddbff; background: transparent;"
+            )
+            self.winner_name.setText(" & ".join(f"P{w}" for w in winners))
+            self.winner_name.setStyleSheet(
+                "font-size: 38px; font-weight: 900; color: #5ddbff; background: transparent;"
+            )
+        else:
+            color = self.team_colors.get(winner_id, "#fff")
+            self.winner_crown_label.setText("WINNER")
+            self.winner_crown_label.setStyleSheet(
+                "font-size: 32px; font-weight: 900; color: #ffd700; background: transparent;"
+            )
+            self.winner_name.setText(f"PLAYER {winner_id}")
+            self.winner_name.setStyleSheet(
+                f"font-size: 42px; font-weight: 900; color: {color}; background: transparent;"
+            )
+
+        self.winner_score.setText(f"{top_score} POINTS")
+
+        rank_medals   = {1: "🥇", 2: "🥈", 3: "🥉", 4: "🎖️"}
         grid_positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
 
         for rank, (player_id, score) in enumerate(ranked_players, start=1):
-            widgets = self.player_score_widgets[player_id]
+            if player_id not in self.player_score_widgets:
+                continue
+            w = self.player_score_widgets[player_id]
 
-            # Move card to rank-appropriate grid cell
             row, col = grid_positions[rank - 1]
-            self.scores_grid.addWidget(widgets['card'], row, col)
+            self.scores_grid.addWidget(w['card'], row, col)
+            w['rank'].setText(rank_medals[rank])
+            w['score'].setText(f"{score} pts")
 
-            # Update rank badge
-            widgets['rank'].setText(rank_medals[rank])
-            
-            # Update score
-            widgets['score'].setText(f"{score} pts")
-            
-            # Highlight winner card
-            if player_id == winner_id:
-                widgets['card'].setStyleSheet(
-                    f"QFrame {{ "
-                    f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-                    f"stop:0 rgba(255, 215, 0, 0.3), "
-                    f"stop:1 {winner_color}40); "
-                    f"border-left: 8px solid {winner_color}; "
-                    f"border: 3px solid #ffd700; "
-                    f"border-radius: 10px; "
-                    f"padding: 15px; "
-                    f"}}"
+            color = self.team_colors.get(player_id, "#888")
+            is_winner = player_id in winners
+
+            if is_winner and len(winners) == 1:
+                wc = self.team_colors.get(winner_id, color)
+                w['card'].setStyleSheet(
+                    f"QFrame {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+                    f"stop:0 rgba(255,215,0,0.25),stop:1 {wc}30); "
+                    f"border-left: 5px solid {wc}; border: 2px solid #ffd700; "
+                    f"border-radius: 10px; padding: 8px; }}"
                 )
-                widgets['score'].setStyleSheet(
-                    "font-size: 32px; font-weight: 900; color: #ffd700; "
-                    "background: transparent; padding-right: 10px;"
+                w['score'].setStyleSheet(
+                    "font-size: 24px; font-weight: 900; color: #ffd700; "
+                    "background: transparent; padding-right: 6px;"
                 )
-        
-        # Animate trophy
+            elif is_winner:
+                w['card'].setStyleSheet(
+                    "QFrame { background: rgba(93,219,255,0.15); "
+                    "border: 2px solid #5ddbff; border-radius: 10px; padding: 8px; }"
+                )
+                w['score'].setStyleSheet(
+                    "font-size: 24px; font-weight: 900; color: #5ddbff; "
+                    "background: transparent; padding-right: 6px;"
+                )
+            else:
+                w['card'].setStyleSheet(
+                    f"QFrame {{ background: rgba(30,40,55,0.9); "
+                    f"border-left: 5px solid {color}; "
+                    f"border-radius: 10px; padding: 8px; }}"
+                )
+                w['score'].setStyleSheet(
+                    "font-size: 24px; font-weight: 900; color: #39FF14; "
+                    "background: transparent; padding-right: 6px;"
+                )
+
         self._animate_trophy()
-    
+
+    # ── Trophy pulse ──────────────────────────────────────────────────────────
+
     def _animate_trophy(self):
-        """Pulse animation for trophy — stops after 12 pulses."""
+        if hasattr(self, 'pulse_timer') and self.pulse_timer.isActive():
+            self.pulse_timer.stop()
         self.pulse_state = 0
         self._pulse_count = 0
-        self.pulse_timer = QTimer()
+        self.pulse_timer = QTimer(self)
         self.pulse_timer.timeout.connect(self._pulse_trophy)
         self.pulse_timer.start(500)
-    
+
     def _pulse_trophy(self):
-        """Pulse the trophy between two sizes, stop after 12 pulses."""
         self._pulse_count += 1
         if self._pulse_count > 12:
             self.pulse_timer.stop()
-            # Settle on the normal size
-            self.trophy.setStyleSheet(
-                "font-size: 120px; background: transparent; padding: 20px;"
-            )
+            self.trophy.setStyleSheet("font-size: 56px; background: transparent;")
             return
+        size = "68px" if self.pulse_state == 0 else "56px"
+        self.trophy.setStyleSheet(f"font-size: {size}; background: transparent;")
+        self.pulse_state ^= 1
 
-        if self.pulse_state == 0:
-            self.trophy.setStyleSheet(
-                "font-size: 140px; background: transparent; padding: 20px;"
-            )
-            self.pulse_state = 1
-        else:
-            self.trophy.setStyleSheet(
-                "font-size: 120px; background: transparent; padding: 20px;"
-            )
-            self.pulse_state = 0
-    
+    # ── Fade ──────────────────────────────────────────────────────────────────
+
+    def fade_in(self, duration_ms: int = 500, callback=None):
+        self.center_on_parent()
+        self.setWindowOpacity(0.0)
+        self._fade_anim = QPropertyAnimation(self, b"windowOpacity")
+        self._fade_anim.setDuration(duration_ms)
+        self._fade_anim.setStartValue(0.0)
+        self._fade_anim.setEndValue(1.0)
+        self._fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        if callback:
+            self._fade_anim.finished.connect(callback)
+        self._fade_anim.start()
+
+    def fade_out(self, duration_ms: int = 300, callback=None):
+        self._fade_anim = QPropertyAnimation(self, b"windowOpacity")
+        self._fade_anim.setDuration(duration_ms)
+        self._fade_anim.setStartValue(1.0)
+        self._fade_anim.setEndValue(0.0)
+        self._fade_anim.setEasingCurve(QEasingCurve.Type.InCubic)
+        if callback:
+            self._fade_anim.finished.connect(callback)
+        self._fade_anim.start()
+
+    # ── Cleanup ───────────────────────────────────────────────────────────────
+
     def cleanup(self):
-        """Stop animations"""
         if hasattr(self, 'pulse_timer'):
             self.pulse_timer.stop()

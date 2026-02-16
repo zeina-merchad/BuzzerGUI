@@ -1,4 +1,5 @@
 import sys
+import os
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -19,7 +20,6 @@ def _make_empty_config() -> GameConfig:
         timer_seconds=20,
         answer_seconds=8,
         shuffle_questions=False,
-        # FIX: use tuple() to match the updated GameConfig field type
         question_files=(),
         pack_dir=Path.cwd(),
         enable_cascading_attempts=True,
@@ -29,12 +29,58 @@ def _make_empty_config() -> GameConfig:
     )
 
 
+class _NoOpMQTTBackend:
+    """Stub backend used in --no-mqtt / demo mode.
+
+    FIX #6: allows the app to run without a live MQTT broker for development
+    and testing.  All methods are no-ops; callbacks are never fired so the
+    engine stays in manual-only mode (admin clicks UNLOCK / NEXT manually).
+    """
+    connected = False
+    state = None
+
+    class _Bridge:
+        """Minimal signal stub so HostScreen's bridge.heartbeat_resolved.connect() doesn't crash."""
+        class _Sig:
+            def connect(self, *a, **kw): pass
+            def emit(self, *a, **kw): pass
+        heartbeat_resolved = _Sig()
+
+    bridge = _Bridge()
+
+    on_buzz_callback = None
+    on_answer_callback = None
+    on_player_connected_callback = None
+    on_player_disconnected_callback = None
+    on_state_change_callback = None
+    on_player_unresponsive_callback = None
+
+    def connect(self): return True
+    def disconnect(self): pass
+    def unlock_buzzers(self): pass
+    def lock_player(self, player_id): pass
+    def start_question(self, question_id, max_attempts=1): pass
+    def end_question(self): pass
+    def mark_answer_wrong(self, player_id): pass
+    def mark_answer_correct(self, player_id): pass
+    def send_heartbeat(self, player_id): pass
+    def send_heartbeat_to_all(self, timeout_seconds=10): pass
+    def get_connected_players(self, timeout_seconds=60): return []
+    def check_all_players_liveliness(self): return {1: False, 2: False, 3: False, 4: False}
+    def check_player_liveliness(self, player_id): return False
+    def all_pings_resolved(self, timeout_seconds=10): return True
+    def get_status(self): return {"connected": False, "state": "demo"}
+
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Football Trivia Game")
     app.setOrganizationName("Football Trivia Game")
 
-    # ── ENGINE: starts empty, questions injected by AdminDashboard ──────────
+    # FIX #6: --no-mqtt flag (or NO_MQTT=1 env var) enables demo/offline mode
+    no_mqtt = "--no-mqtt" in sys.argv or os.environ.get("NO_MQTT", "0") == "1"
+
+    # ── ENGINE ────────────────────────────────────────────────────────────────
     try:
         engine = GameEngine(_make_empty_config(), questions=[])
     except Exception as e:
@@ -44,27 +90,45 @@ def main():
 
     print("[OK] Engine initialised with 0 questions — load via Admin Dashboard")
 
-    # ── MQTT BACKEND ────────────────────────────────────────────────────────
-    MQTT_BROKER_HOST = "192.168.10.10"
-    MQTT_BROKER_PORT = 1883
+    # ── MQTT BACKEND ──────────────────────────────────────────────────────────
+    MQTT_BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "192.168.10.10")
+    MQTT_BROKER_PORT = int(os.environ.get("MQTT_BROKER_PORT", "1883"))
 
-    mqtt_backend = MQTTBuzzerBackend(
-        broker_host=MQTT_BROKER_HOST,
-        broker_port=MQTT_BROKER_PORT,
-    )
-
-    if not mqtt_backend.connect():
-        QMessageBox.critical(
-            None, "MQTT Connection Failed",
-            f"Failed to connect to broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}\n\n"
-            "Please ensure the MQTT broker is running and the network is active.\n\n"
-            "The application will now exit.",
+    if no_mqtt:
+        print("[OK] --no-mqtt flag set — running in demo/offline mode (no hardware)")
+        mqtt_backend = _NoOpMQTTBackend()
+    else:
+        mqtt_backend = MQTTBuzzerBackend(
+            broker_host=MQTT_BROKER_HOST,
+            broker_port=MQTT_BROKER_PORT,
         )
-        sys.exit(1)
 
-    print("[OK] Connected to MQTT broker")
+        if not mqtt_backend.connect():
+            # FIX #6: offer graceful fallback instead of hard sys.exit(1)
+            reply = QMessageBox.critical(
+                None,
+                "MQTT Connection Failed",
+                f"Failed to connect to broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}\n\n"
+                "Please ensure the MQTT broker is running and the network is active.\n\n"
+                "Run with --no-mqtt to start without hardware (demo mode).",
+                QMessageBox.Retry | QMessageBox.Ignore | QMessageBox.Abort,
+            )
 
-    # ── APPLICATION WINDOW ──────────────────────────────────────────────────
+            if reply == QMessageBox.Abort:
+                sys.exit(1)
+            elif reply == QMessageBox.Ignore:
+                print("[WARNING] Continuing without MQTT connection — hardware will not work")
+                # Keep the real backend object so reconnection attempts can occur,
+                # but do not block the UI.
+            else:
+                # Retry once more — if it fails again, fall through to offline mode
+                if not mqtt_backend.connect():
+                    print("[WARNING] MQTT retry failed — switching to demo mode")
+                    mqtt_backend = _NoOpMQTTBackend()
+
+    print("[OK] MQTT backend ready")
+
+    # ── APPLICATION WINDOW ────────────────────────────────────────────────────
     try:
         from app.ui.app_window import AppWindow
         window = AppWindow(engine, mqtt_backend)
@@ -74,23 +138,19 @@ def main():
                              f"Failed to create application window:\n{e}")
         mqtt_backend.disconnect()
         sys.exit(1)
-        
+
     try:
         dashboard = window.admin_dashboard  # triggers lazy creation + internal wiring
-
-        # Config changes → window if it supports it
-        if hasattr(window, 'apply_config'):
-            dashboard.config_changed.connect(window.apply_config)
-
         print("[OK] AdminDashboard wired ✓")
-
     except AttributeError as exc:
         print(f"[WARNING] Could not wire AdminDashboard: {exc}")
         print("          Ensure AppWindow exposes self.admin_dashboard")
 
-    # ── READY ────────────────────────────────────────────────────────────────
+    # ── READY ─────────────────────────────────────────────────────────────────
+    mode_str = "DEMO (no hardware)" if isinstance(mqtt_backend, _NoOpMQTTBackend) else \
+               f"HARDWARE ({MQTT_BROKER_HOST}:{MQTT_BROKER_PORT})"
     print("\n" + "=" * 55)
-    print("READY — no questions loaded yet")
+    print(f"READY — {mode_str}")
     print("Open Admin Dashboard → Load Excel → questions go live")
     print("=" * 55 + "\n")
 

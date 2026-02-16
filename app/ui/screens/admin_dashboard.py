@@ -128,7 +128,7 @@ def row_to_question(row: dict, row_num: int) -> tuple[Question, bool]:
     return q, is_enabled
 
 
-def export_to_excel(questions: List[Question], path: Path, disabled_ids: set = None) -> None:
+def export_to_excel(questions: List[Question], path: Path, disabled_ids: set = None, config: "GameConfig | None" = None) -> None:
     """Save questions to Excel — clean white/light theme."""
     if disabled_ids is None:
         disabled_ids = set()
@@ -248,11 +248,50 @@ def export_to_excel(questions: List[Question], path: Path, disabled_ids: set = N
         else:
             cell.font = Font(name="Calibri", color="333333", size=11)
 
+    # ── Config sheet ─────────────────────────────────────────────────────────
+    if config is not None:
+        ws_cfg = wb.create_sheet("Config")
+        ws_cfg.column_dimensions["A"].width = 30
+        ws_cfg.column_dimensions["B"].width = 30
+        ws_cfg.sheet_view.showGridLines = False
+
+        cfg_hdr_font  = Font(name="Calibri", bold=True, color=HDR_FG, size=11)
+        cfg_hdr_fill  = PatternFill("solid", fgColor=HDR_BG)
+        cfg_val_font  = Font(name="Calibri", color="333333", size=11)
+
+        # Header row
+        for col, txt in enumerate(["Setting", "Value"], start=1):
+            c = ws_cfg.cell(row=1, column=col, value=txt)
+            c.font  = cfg_hdr_font
+            c.fill  = cfg_hdr_fill
+            c.alignment = Alignment(horizontal="center", vertical="center")
+
+        cfg_rows = [
+            ("name",                       config.name),
+            ("rounds",                     config.rounds),
+            ("questions_per_round",        config.questions_per_round),
+            ("timer_seconds",              config.timer_seconds),
+            ("answer_seconds",             config.answer_seconds),
+            ("shuffle_questions",          config.shuffle_questions),
+            ("enable_cascading_attempts",  getattr(config, "enable_cascading_attempts", True)),
+            ("penalty_for_wrong",          getattr(config, "penalty_for_wrong", 0)),
+        ]
+
+        for row_idx, (key, val) in enumerate(cfg_rows, start=2):
+            ka = ws_cfg.cell(row=row_idx, column=1, value=key)
+            va = ws_cfg.cell(row=row_idx, column=2, value=str(val))
+            ka.font = Font(name="Calibri", bold=True, color="1F4E79", size=11)
+            va.font = cfg_val_font
+            bg = PatternFill("solid", fgColor="FFFFFF" if row_idx % 2 == 0 else "EBF3FB")
+            ka.fill = va.fill = bg
+
     wb.save(path)
 
 
-def import_from_excel(path: Path) -> tuple[List[Question], set]:
-    """Load questions from Excel. Returns (questions, disabled_ids)."""
+def import_from_excel(path: Path) -> tuple[List[Question], set, dict]:
+    """Load questions from Excel. Returns (questions, disabled_ids, config_dict).
+    config_dict is empty if no Config sheet exists (backwards-compatible).
+    """
     from openpyxl import load_workbook
 
     wb = load_workbook(path, data_only=True)
@@ -306,7 +345,15 @@ def import_from_excel(path: Path) -> tuple[List[Question], set]:
     if not questions:
         raise ValueError("No valid questions in Excel")
 
-    return questions, disabled_ids
+    # ── Config sheet (optional — older files won't have it) ───────────────────
+    config_dict = {}
+    if "Config" in wb.sheetnames:
+        ws_cfg = wb["Config"]
+        for row in ws_cfg.iter_rows(min_row=2, values_only=True):
+            if row[0] and row[1] is not None:
+                config_dict[str(row[0]).strip()] = str(row[1]).strip()
+
+    return questions, disabled_ids, config_dict
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -459,6 +506,27 @@ class QuestionListItem(QFrame):
         self._update_badge()  # Update badge when toggled
         self.toggle_clicked.emit(self.question.id, self._enabled)
 
+    def update_enabled(self, enabled: bool):
+        """Update enabled state without emitting toggle_clicked.
+
+        Called by AdminDashboard._ref() fast path when disabled_ids changes
+        externally (e.g. Select All / Deselect All) so the widget's visual
+        state stays in sync without triggering another _sync_to_engine call.
+
+        Previously this method was missing, so _ref()'s ``hasattr`` guard
+        always returned False, the fast path silently did nothing, and item
+        styling was left stale after programmatic enable/disable operations.
+        """
+        if self._enabled == enabled:
+            return
+        # Block checkbox signal so we don't re-emit toggle_clicked
+        self.chk.blockSignals(True)
+        self._enabled = enabled
+        self.chk.setChecked(enabled)
+        self.chk.blockSignals(False)
+        self._apply_frame_style()
+        self._update_badge()
+
 
 # ═══════════════════════════════════════════════════════════════
 # ADMIN DASHBOARD
@@ -476,43 +544,52 @@ class AdminDashboard(QWidget):
         self.current_question_id: Optional[str] = None
         self.disabled_ids: set = set()
         self.current_excel_path: Optional[Path] = None
-        self.has_unsaved_changes: bool = False  # Track unsaved changes
-        
+        self.has_unsaved_changes: bool = False
+        # FIX L: track whether a game is actively running so _tog() does not
+        # push question-list changes to the engine mid-game and silently reset
+        # scores / current question.
+        self._game_active: bool = False
+
+        # ── Build UI once (FIX BUG-1: was incorrectly inside set_game_active) ─
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the entire dashboard UI. Called once from __init__."""
         self.setStyleSheet("QWidget { background: #0d1b2a; }")
         self.setMinimumSize(1400, 900)
-        
+
         root = QVBoxLayout(self)
         root.setContentsMargins(15, 15, 15, 15)
         root.setSpacing(15)
-        
+
         # Header
         hdr_lay = QHBoxLayout()
         hdr = QLabel("⚙️ EXCEL QUESTION MANAGER")
         hdr.setStyleSheet("font-size: 24px; font-weight: 900; color: #39FF14; letter-spacing: 2px; padding: 10px;")
-        
+
         bl = QPushButton("📂 Load Excel")
         bs = QPushButton("💾 Save Excel")
         ba = QPushButton("💾 Save As")
         bx = QPushButton("📤 Export Selected")
-        
+
         for b in (bl, bs, ba, bx):
             b.setStyleSheet(self._btn())
             b.setMinimumHeight(45)
-        
+
         bl.clicked.connect(self._load)
         bs.clicked.connect(self._save)
         ba.clicked.connect(self._save_as)
         bx.clicked.connect(self._export)
-        
+
         hdr_lay.addWidget(hdr)
         hdr_lay.addStretch()
         hdr_lay.addWidget(bl)
         hdr_lay.addWidget(bs)
         hdr_lay.addWidget(ba)
         hdr_lay.addWidget(bx)
-        
+
         root.addLayout(hdr_lay)
-        
+
         self.file_lbl = QLabel("📂 Click '📂 Load Excel' to get started • No file loaded")
         self.file_lbl.setStyleSheet(
             "font-size: 12px; color: rgba(255,255,255,0.5); "
@@ -520,8 +597,7 @@ class AdminDashboard(QWidget):
             "border-radius: 6px; padding: 8px 12px; text-align: center;"
         )
         root.addWidget(self.file_lbl)
-        
-        # Tabs
+
         from PySide6.QtWidgets import QTabWidget
         tabs = QTabWidget()
         tabs.setStyleSheet(
@@ -533,31 +609,34 @@ class AdminDashboard(QWidget):
             "color: white; font-weight: 700; }"
             "QTabBar::tab:selected { background: rgba(57,255,20,0.2); border-color: #39FF14; }"
         )
-        
-        # Tab 1: Questions List & Editor
+
         tabs.addTab(self._create_questions_tab(), "📝 Questions")
-        
-        # Tab 2: Game Settings
         tabs.addTab(self._create_settings_tab(), "⚙️ Settings")
-        
+
         root.addWidget(tabs, stretch=1)
-        
-        # Bottom
+
         bot = QHBoxLayout()
         self.status = QLabel("Ready")
         self.status.setStyleSheet("font-size: 11px; color: #39FF14; font-weight: 700;")
-        
+
         bc = QPushButton("✖️ Close")
         bc.setMinimumHeight(45)
         bc.setStyleSheet(self._btn())
         bc.clicked.connect(self.close)
-        
+
         bot.addWidget(self.status)
         bot.addStretch()
         bot.addWidget(bc)
-        
+
         root.addLayout(bot)
-    
+
+    def set_game_active(self, active: bool) -> None:
+        """FIX BUG-1: UI is now built in __init__. This method only toggles
+        the flag so that checkbox toggles don't push changes to the engine
+        mid-game and silently reset scores / current question index.
+        """
+        self._game_active = active
+
     def _mark_unsaved_changes(self):
         """Mark that there are unsaved changes"""
         self.has_unsaved_changes = True
@@ -737,21 +816,44 @@ class AdminDashboard(QWidget):
         return w
     
     def _save_settings(self):
-        """Save game settings to config"""
-        self.config.name = self.pack_name.text().strip() or self.config.name
-        self.config.rounds = self.rounds_spin.value()
-        self.config.questions_per_round = self.qpr_spin.value()
-        self.config.timer_seconds = self.timer_spin.value()
-        self.config.answer_seconds = self.answer_spin.value()
-        self.config.shuffle_questions = self.shuffle_chk.isChecked()
-        
-        # Update cascading settings if attributes exist
+        """Save game settings to config.
+
+        FIX: GameConfig is a frozen=True dataclass, so direct attribute
+        assignment raises FrozenInstanceError at runtime.  Use dataclasses.replace()
+        to produce a new config object, then emit config_changed so the engine's
+        update_config() receives the new values.  Previously config_changed was
+        never emitted from here, making the Settings tab completely non-functional.
+        """
+        import dataclasses
+        kwargs = dict(
+            name=self.pack_name.text().strip() or self.config.name,
+            rounds=self.rounds_spin.value(),
+            questions_per_round=self.qpr_spin.value(),
+            timer_seconds=self.timer_spin.value(),
+            answer_seconds=self.answer_spin.value(),
+            shuffle_questions=self.shuffle_chk.isChecked(),
+        )
         if hasattr(self.config, 'enable_cascading_attempts'):
-            self.config.enable_cascading_attempts = self.cascade_chk.isChecked()
+            kwargs['enable_cascading_attempts'] = self.cascade_chk.isChecked()
         if hasattr(self.config, 'penalty_for_wrong'):
-            self.config.penalty_for_wrong = self.penalty_spin.value()
-        
-        self.status.setText("✅ Settings saved")
+            kwargs['penalty_for_wrong'] = self.penalty_spin.value()
+
+        self.config = dataclasses.replace(self.config, **kwargs)
+
+        # FIX: emit so engine.update_config() receives the new values
+        self.config_changed.emit(self.config)
+
+        # Also persist config to the Excel file immediately if one is loaded,
+        # so the user doesn't need to click Save separately just to store settings.
+        if self.current_excel_path and self.current_excel_path.exists():
+            try:
+                export_to_excel(self.questions, self.current_excel_path, self.disabled_ids, config=self.config)
+                self.status.setText("✅ Settings saved to Excel")
+            except Exception as e:
+                self.status.setText(f"⚠️ Settings applied but Excel write failed: {e}")
+        else:
+            self.status.setText("✅ Settings saved (load an Excel file to persist)")
+
         QMessageBox.information(self, "Success", "Game settings saved!")
     
     def _qlist(self):
@@ -943,6 +1045,61 @@ class AdminDashboard(QWidget):
         lay.addWidget(sc)
         return self.eg
     
+    def _apply_config_dict(self, cfg: dict):
+        """Apply a config dict (loaded from Excel Config sheet) to the UI spinboxes
+        and emit config_changed so the engine receives the values immediately."""
+        import dataclasses
+
+        def _int(key, fallback):
+            try:
+                return int(cfg[key])
+            except (KeyError, ValueError):
+                return fallback
+
+        def _bool(key, fallback):
+            try:
+                return cfg[key].lower() in ("true", "1", "yes")
+            except (KeyError, AttributeError):
+                return fallback
+
+        def _str(key, fallback):
+            return cfg.get(key, fallback) or fallback
+
+        name       = _str("name",  self.config.name)
+        rounds     = _int("rounds", self.config.rounds)
+        qpr        = _int("questions_per_round", self.config.questions_per_round)
+        timer      = _int("timer_seconds", self.config.timer_seconds)
+        answer     = _int("answer_seconds", self.config.answer_seconds)
+        shuffle    = _bool("shuffle_questions", self.config.shuffle_questions)
+        cascade    = _bool("enable_cascading_attempts", getattr(self.config, "enable_cascading_attempts", True))
+        penalty    = _int("penalty_for_wrong", getattr(self.config, "penalty_for_wrong", 0))
+
+        # Update the Settings tab widgets so the user sees the loaded values
+        self.pack_name.setText(name)
+        self.rounds_spin.setValue(rounds)
+        self.qpr_spin.setValue(qpr)
+        self.timer_spin.setValue(timer)
+        self.answer_spin.setValue(answer)
+        self.shuffle_chk.setChecked(shuffle)
+        if hasattr(self, "cascade_chk"):
+            self.cascade_chk.setChecked(cascade)
+        if hasattr(self, "penalty_spin"):
+            self.penalty_spin.setValue(penalty)
+
+        # Build and store the new config, emit to engine
+        kwargs = dict(
+            name=name, rounds=rounds, questions_per_round=qpr,
+            timer_seconds=timer, answer_seconds=answer, shuffle_questions=shuffle,
+        )
+        if hasattr(self.config, "enable_cascading_attempts"):
+            kwargs["enable_cascading_attempts"] = cascade
+        if hasattr(self.config, "penalty_for_wrong"):
+            kwargs["penalty_for_wrong"] = penalty
+
+        self.config = dataclasses.replace(self.config, **kwargs)
+        self.config_changed.emit(self.config)
+        print(f"[CONFIG] Loaded from Excel: rounds={rounds}, qpr={qpr}, timer={timer}s")
+
     def _load(self):
         """Load questions from Excel file with detailed feedback"""
         p, _ = QFileDialog.getOpenFileName(
@@ -958,12 +1115,16 @@ class AdminDashboard(QWidget):
             # Show loading status
             self.status.setText("⏳ Loading Excel file...")
             
-            ld, disabled = import_from_excel(Path(p))
+            ld, disabled, config_dict = import_from_excel(Path(p))
             self.questions = ld
             self.disabled_ids = disabled  # Load saved selection state
             self.current_excel_path = Path(p)
             
             enabled_count = len(ld) - len(disabled)
+            
+            # ── Apply saved config if the file has a Config sheet ─────────────
+            if config_dict:
+                self._apply_config_dict(config_dict)
             
             # Update UI
             self.file_lbl.setText(f"📄 Loaded: {Path(p).name}")
@@ -1007,7 +1168,7 @@ class AdminDashboard(QWidget):
             self._save_as()
             return
         try:
-            export_to_excel(self.questions, self.current_excel_path, self.disabled_ids)
+            export_to_excel(self.questions, self.current_excel_path, self.disabled_ids, config=self.config)
             self.status.setText(f"✅ Saved {len(self.questions)} questions")
             self.pack_saved.emit(str(self.current_excel_path))
             
@@ -1032,7 +1193,7 @@ class AdminDashboard(QWidget):
         if not p:
             return
         try:
-            export_to_excel(self.questions, Path(p), self.disabled_ids)
+            export_to_excel(self.questions, Path(p), self.disabled_ids, config=self.config)
             self.current_excel_path = Path(p)
             self.file_lbl.setText(f"📄 {Path(p).name}")
             self.status.setText(f"✅ Saved {len(self.questions)}")
@@ -1055,16 +1216,30 @@ class AdminDashboard(QWidget):
             QMessageBox.critical(self, "Error", f"Save failed:\n{e}")
     
     def _sync_to_engine(self):
-        """Sync selected questions to game engine"""
-        # Get only enabled (selected) questions
+        """Sync the *selected* question list to the game engine.
+
+        BUG FIXED: the previous version also emitted config_changed here,
+        which caused every checkbox toggle and every Excel load to overwrite
+        engine.cfg with self.config — which is the value that was current when
+        the AdminDashboard was first opened (or last saved via "Save Settings").
+
+        Concrete failure scenario:
+          1. User sets penalty_spin = 2 in the Settings tab.
+          2. User clicks "Save Settings" → self.config updated, engine.cfg.penalty = 2 ✓
+          3. User then loads an Excel file (or toggles a question checkbox).
+          4. _sync_to_engine() was called, emitting config_changed(self.config).
+             If self.config was already updated (step 2) this was harmless, but
+             if the user had only changed the spinbox WITHOUT clicking Save yet,
+             self.config still had penalty=0, silently resetting the engine.
+          5. engine.cfg.penalty_for_wrong → 0 again, penalty silently dropped.
+
+        Fix: _sync_to_engine only syncs questions. Config is the exclusive
+        responsibility of _save_settings, which uses dataclasses.replace() to
+        build a new config and emits config_changed only when the user
+        explicitly saves.  The two concerns must not be mixed.
+        """
         enabled_questions = [q for q in self.questions if q.id not in self.disabled_ids]
-        
-        # Emit signal to update game engine
         self.questions_changed.emit(enabled_questions)
-        
-        # Also emit config if it has changed
-        self.config_changed.emit(self.config)
-        
         print(f"[SYNC] Updated game engine: {len(enabled_questions)}/{len(self.questions)} questions")
     
     def _export(self):
@@ -1083,50 +1258,83 @@ class AdminDashboard(QWidget):
             QMessageBox.critical(self, "Error", f"Export failed:\n{e}")
     
     def _ref(self):
-        while self.qlay.count():
-            i = self.qlay.takeAt(0)
-            if i.widget():
-                i.widget().deleteLater()
-        
+        """Refresh the question list view.
+
+        FIX: the original implementation deleted and recreated ALL QuestionListItem
+        widgets on every call — including every checkbox toggle.  For 100 questions
+        this meant 100 widget destructions + creations + signal reconnections per
+        click.  The fix caches widgets by question id and only rebuilds when the
+        question list itself changes (add/delete/reorder); toggling enabled state
+        now just calls update_enabled() on the existing widget in-place.
+
+        _ref_force() is a separate helper that clears the cache and rebuilds from
+        scratch — called from _new(), _del(), _dup(), _load() etc.
+        """
+        # Initialise cache on first call
+        if not hasattr(self, '_item_cache'):
+            self._item_cache: dict = {}
+
         # Get filter selection
-        filter_mode = 0  # Default to "All"
+        filter_mode = 0
         if hasattr(self, 'filter_combo'):
             filter_mode = self.filter_combo.currentIndex()
-        
-        # Filter questions based on selection
+
+        # Determine which questions to show
         filtered_questions = []
         for i, q in enumerate(self.questions):
             is_enabled = q.id not in self.disabled_ids
-            
-            # Apply filter
-            if filter_mode == 1 and not is_enabled:  # Enabled Only
+            if filter_mode == 1 and not is_enabled:
                 continue
-            elif filter_mode == 2 and is_enabled:  # Disabled Only
+            elif filter_mode == 2 and is_enabled:
                 continue
-            
             filtered_questions.append((i, q, is_enabled))
-        
-        # Show filtered questions
-        for i, q, enabled in filtered_questions:
-            item = QuestionListItem(q, i, enabled=enabled)
-            item.edit_clicked.connect(self._ed)
-            item.delete_clicked.connect(self._del)
-            item.duplicate_clicked.connect(self._dup)
-            item.toggle_clicked.connect(self._tog)
-            self.qlay.addWidget(item)
-        
-        self.qlay.addStretch()
-        
-        # Update label with filter info
+
+        # Check whether the visible set has changed (different ids or order)
+        visible_ids = [q.id for _, q, _ in filtered_questions]
+        cached_ids = list(self._item_cache.keys())
+
+        if visible_ids != cached_ids:
+            # Full rebuild — remove all current widgets and repopulate cache
+            while self.qlay.count():
+                item_layout = self.qlay.takeAt(0)
+                if item_layout.widget():
+                    item_layout.widget().setParent(None)
+
+            self._item_cache.clear()
+
+            for i, q, enabled in filtered_questions:
+                item = QuestionListItem(q, i, enabled=enabled)
+                item.edit_clicked.connect(self._ed)
+                item.delete_clicked.connect(self._del)
+                item.duplicate_clicked.connect(self._dup)
+                item.toggle_clicked.connect(self._tog)
+                self.qlay.addWidget(item)
+                self._item_cache[q.id] = item
+
+            self.qlay.addStretch()
+        else:
+            # Fast path — only update the enabled badge on existing widgets
+            for _, q, enabled in filtered_questions:
+                item = self._item_cache.get(q.id)
+                if item and hasattr(item, 'update_enabled'):
+                    item.update_enabled(enabled)
+
+        # Update label
         enabled_count = len(self.questions) - len(self.disabled_ids)
         disabled_count = len(self.disabled_ids)
-        
+
         if filter_mode == 0:
             self.lbl.setText(f"📝 Questions ({len(self.questions)}) - {enabled_count} enabled, {disabled_count} disabled")
         elif filter_mode == 1:
             self.lbl.setText(f"📝 Questions ({enabled_count} enabled shown)")
         else:
             self.lbl.setText(f"📝 Questions ({disabled_count} disabled shown)")
+
+    def _ref_force(self):
+        """Force a full widget rebuild — call after add/delete/reorder operations."""
+        if hasattr(self, '_item_cache'):
+            self._item_cache.clear()
+        self._ref()
     
     def _sel_all(self):
         self.disabled_ids.clear()
@@ -1150,8 +1358,19 @@ class AdminDashboard(QWidget):
         else:
             self.disabled_ids.add(qid)
         self._upd_stats()
-        self._sync_to_engine()
         self._mark_unsaved_changes()  # Mark changes on every toggle
+
+        # FIX L: do NOT sync to the engine while a game is running — calling
+        # engine.load_questions() resets scores and current_q_idx mid-game.
+        # Changes are staged here and applied only when the host explicitly
+        # saves the Excel file (which calls _sync_to_engine after saving).
+        if self._game_active:
+            self.status.setText(
+                "⚠️ Changes staged — save Excel to apply after current game"
+            )
+            return
+
+        self._sync_to_engine()
     
     def _new(self):
         self.current_question_id = None
@@ -1264,7 +1483,7 @@ class AdminDashboard(QWidget):
             max_attempts=getattr(q, "max_attempts", 3),
         )
         self.questions.append(nq)
-        self._ref()
+        self._ref_force()
         self._upd_stats()
         self._sync_to_engine()  # Sync after duplicating
         self.status.setText("✅ Duplicated - Game engine updated")
@@ -1274,7 +1493,7 @@ class AdminDashboard(QWidget):
         if r == QMessageBox.Yes:
             self.questions = [q for q in self.questions if q.id != qid]
             self.disabled_ids.discard(qid)
-            self._ref()
+            self._ref_force()
             self._upd_stats()
             self._sync_to_engine()  # Sync after deleting
             self.status.setText("✅ Deleted - Game engine updated")
@@ -1315,8 +1534,34 @@ class AdminDashboard(QWidget):
             "Video": "Video (*.mp4 *.avi *.mkv *.mov *.webm)",
         }
         f = flt.get(mt, "*.*")
-        p, _ = QFileDialog.getOpenFileName(self, f"Select {mt}", "", f)
+
+        # FIX J: open the file browser starting from the pack directory so the
+        # resulting path is easy to make relative.  Fall back to home dir if no
+        # pack is loaded yet.
+        start_dir = str(self.current_excel_path.parent) if self.current_excel_path else ""
+        p, _ = QFileDialog.getOpenFileName(self, f"Select {mt}", start_dir, f)
         if p:
+            # FIX J: store a path relative to the pack directory so the media
+            # reference keeps working when the pack is moved or opened on another
+            # machine.  Absolute paths break portability.
+            if self.current_excel_path:
+                try:
+                    rel = Path(p).relative_to(self.current_excel_path.parent)
+                    self.emp.setText(str(rel))
+                    return
+                except ValueError:
+                    # File is outside the pack directory — warn and store absolute
+                    # as a fallback (better than silently storing a broken path).
+                    from PySide6.QtWidgets import QMessageBox
+                    QMessageBox.warning(
+                        self,
+                        "Media Outside Pack Directory",
+                        f"The selected file is outside the pack directory:\n"
+                        f"  {self.current_excel_path.parent}\n\n"
+                        f"The absolute path will be stored, but this pack may not "
+                        f"work on other machines.\n\n"
+                        f"Tip: copy the media file into the pack directory first.",
+                    )
             self.emp.setText(p)
     
     def _upd_stats(self):

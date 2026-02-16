@@ -6,7 +6,7 @@ class TimerWidget(QWidget):
         super().__init__()
         self.setFixedSize(150, 150)
 
-        self.label = QLabel("07s")
+        self.label = QLabel("--")
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setStyleSheet(
             "font-size: 42px; font-weight: 900; "
@@ -77,3 +77,27 @@ class TimerWidget(QWidget):
                     "min-width: 120px; min-height: 120px; "
                     "max-width: 120px; max-height: 120px;"
                 )
+
+    def reset(self):
+        """Stop any running pulse and show the idle placeholder.
+
+        BUG FIXED: previously _reset_game called self.timer.set_remaining_ms(0),
+        which passed 0ms → sec=0.0 → the critical-state branch fired, started
+        the red pulse timer, and left it running on the idle/start screen until
+        the next question loaded.  The fix calls this method instead, which
+        stops the pulse cleanly, resets all state, and shows '--' so it is
+        clear that no question is active.
+        """
+        self._pulse_timer.stop()
+        self._is_critical = False
+        self._pulse_state = 0
+        self.label.setText("--")
+        self.label.setStyleSheet(
+            "font-size: 42px; font-weight: 900; "
+            "color: rgba(255,255,255,0.4); "
+            "background: transparent; "
+            "border: 6px solid rgba(57,255,20,0.3); "
+            "border-radius: 60px; "
+            "min-width: 120px; min-height: 120px; "
+            "max-width: 120px; max-height: 120px;"
+        )

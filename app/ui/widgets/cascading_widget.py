@@ -116,8 +116,30 @@ class CascadingAttemptsWidget(QWidget):
         # Start hidden
         self.hide()
     
-    def update_attempt(self, attempt_number: int, points_available: int, players_remaining: list):
-        """Update display with current attempt information"""
+    def update_attempt(self, attempt_number: int, points_available: int,
+                       players_remaining: list, active_players: list = None):
+        """Update display with current attempt information.
+
+        Args:
+            attempt_number:   Current attempt number (1-based).
+            points_available: Points on offer for a correct answer now.
+            players_remaining: Player IDs that have NOT yet attempted.
+            active_players:   All player IDs participating in this game.
+                              Defaults to [1, 2, 3, 4] for backward compat,
+                              but callers should pass engine.scores.scores.keys()
+                              so absent players are not shown as having failed.
+
+        FIX W-03: the old code hardcoded all_players = {1, 2, 3, 4} to derive
+        attempted_players.  With fewer than 4 connected players, absent players
+        appeared with a red ✗ indicator as if they had answered and failed.
+        """
+        # FIX W-03: use the caller-supplied active set, falling back to the
+        # traditional 4-player default so existing call-sites keep working.
+        if active_players is None:
+            all_players = {1, 2, 3, 4}
+        else:
+            all_players = set(active_players)
+
         self.show()
         
         # Update attempt number (with line break for better fit)
@@ -140,8 +162,8 @@ class CascadingAttemptsWidget(QWidget):
             player_list = ", ".join([f"P{p}" for p in players_remaining])
             self.players_label.setText(f"{num_remaining} PLAYERS\nCAN ATTEMPT\n({player_list})")
         
-        # Update player indicators
-        all_players = {1, 2, 3, 4}
+        # FIX W-03: all_players is now derived from the active_players parameter
+        # (set above), not hardcoded as {1,2,3,4}.
         attempted_players = all_players - set(players_remaining)
         
         for player_id, indicator in self.player_indicators.items():
@@ -188,16 +210,23 @@ class CascadingAttemptsWidget(QWidget):
         )
     
     def reset(self):
-        """Reset to initial state"""
+        """Reset to initial state.
+
+        FIX G: setText() was missing — after a wrong answer showed ✗ for a
+        player, reset() restored the style but left the text as ✗.  The stale
+        mark was briefly visible at the start of the next question before
+        update_attempt() overwrote it.
+        """
         self.hide()
-        for indicator in self.player_indicators.values():
+        for pid, indicator in self.player_indicators.items():
+            indicator.setText(f"P{pid}")   # FIX G: restore label text
             indicator.setStyleSheet(
                 "QLabel { "
                 "background: rgba(255, 255, 255, 0.1); "
                 "border: 2px solid rgba(255, 255, 255, 0.3); "
-                "border-radius: 16px; "
+                "border-radius: 19px; "
                 "color: rgba(255, 255, 255, 0.5); "
-                "font-size: 10px; font-weight: 900; "
+                "font-size: 11px; font-weight: 900; "
                 "}"
             )
     

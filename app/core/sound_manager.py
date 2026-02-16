@@ -5,7 +5,7 @@ Handles all game sound effects with fallback support
 
 from pathlib import Path
 from PySide6.QtCore import QObject, QUrl
-from PySide6.QtMultimedia import QSoundEffect, QMediaPlayer, QAudioOutput
+from PySide6.QtMultimedia import QSoundEffect
 
 
 class SoundManager(QObject):

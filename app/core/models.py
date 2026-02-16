@@ -216,10 +216,19 @@ class Scoreboard:
         return sorted(self.scores.items(), key=lambda x: x[1], reverse=True)
 
     def get_winner(self) -> Optional[int]:
-        """Get the player with highest score"""
+        """Get the player with highest score, or None on tie/empty.
+
+        FIX H: the old max() call silently returned the lowest player_id when
+        two players were tied.  Now returns None for a tie so callers are forced
+        to handle it explicitly rather than silently picking the wrong player.
+        """
         if not self.scores:
             return None
-        return max(self.scores.items(), key=lambda x: x[1])[0]
+        top_score = max(self.scores.values())
+        winners = [pid for pid, s in self.scores.items() if s == top_score]
+        if len(winners) == 1:
+            return winners[0]
+        return None  # tie — caller must inspect get_ranking()
 
 
 @dataclass

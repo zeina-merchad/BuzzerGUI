@@ -69,7 +69,9 @@ class OptionsView(QWidget):
             opts.append("")
 
         for i, lab in enumerate(self._labels):
-            lab.setText(opts[i].upper() if opts[i] else "")
+            # FIX K: don't force .upper() — preserve original casing so names,
+            # numbers, and mixed-case answers display as authored.
+            lab.setText(opts[i] if opts[i] else "")
 
     def mark_option_eliminated(self, answer: str):
         answer_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
