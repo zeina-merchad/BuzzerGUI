@@ -3,11 +3,31 @@ import os
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtGui import QIcon
 
 from app.config import get_config
 from app.core.engine import GameEngine
 from app.core.models import GameConfig
 from app.hardware.mqtt_buzzer import MQTTBuzzerBackend
+
+
+def resource_path(rel: str) -> str:
+    """Resolve a resource path that works both in dev and PyInstaller --onedir bundles."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle — files land in _internal/ (PyInstaller 6+)
+        base = os.path.dirname(sys.executable)
+        internal = os.path.join(base, "_internal")
+        path = os.path.join(internal, rel)
+        if os.path.exists(path):
+            return path
+        # Fallback: some files may sit next to the executable
+        path = os.path.join(base, rel)
+        if os.path.exists(path):
+            return path
+        return os.path.join(internal, rel)  # return best guess even if missing
+    else:
+        # Running in dev — relative to this file's directory
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), rel)
 
 
 def _make_empty_config() -> GameConfig:
@@ -77,6 +97,26 @@ def main():
     app.setApplicationName("Football Trivia Game")
     app.setOrganizationName("Football Trivia Game")
 
+    # ── Icon loading ──────────────────────────────────────────────────────────
+    # Tries .ico first (Windows), then .png (Linux / Raspberry Pi).
+    # Place your icon at assets/icon.png for Pi builds,
+    # or assets/icon.ico for Windows builds.
+    icon = QIcon()
+    icon_candidates = [
+        "assets/logo.png",   # Linux / Raspberry Pi packaged
+        "logo.png",          # Linux / Raspberry Pi flat layout
+    ]
+    for try_path in icon_candidates:
+        full_path = resource_path(try_path)
+        if os.path.exists(full_path):
+            icon = QIcon(full_path)
+            if not icon.isNull():
+                app.setWindowIcon(icon)
+                print(f"[OK] Icon loaded: {full_path}")
+                break
+    else:
+        print(f"[WARNING] No icon found — tried: {', '.join(icon_candidates)}")
+
     # FIX #6: --no-mqtt flag (or NO_MQTT=1 env var) enables demo/offline mode
     no_mqtt = "--no-mqtt" in sys.argv or os.environ.get("NO_MQTT", "0") == "1"
 
@@ -104,7 +144,6 @@ def main():
         )
 
         if not mqtt_backend.connect():
-            # FIX #6: offer graceful fallback instead of hard sys.exit(1)
             reply = QMessageBox.critical(
                 None,
                 "MQTT Connection Failed",
@@ -118,10 +157,8 @@ def main():
                 sys.exit(1)
             elif reply == QMessageBox.Ignore:
                 print("[WARNING] Continuing without MQTT connection — hardware will not work")
-                # Keep the real backend object so reconnection attempts can occur,
-                # but do not block the UI.
             else:
-                # Retry once more — if it fails again, fall through to offline mode
+                # Retry once — if it fails again, fall through to offline mode
                 if not mqtt_backend.connect():
                     print("[WARNING] MQTT retry failed — switching to demo mode")
                     mqtt_backend = _NoOpMQTTBackend()
@@ -132,7 +169,14 @@ def main():
     try:
         from app.ui.app_window import AppWindow
         window = AppWindow(engine, mqtt_backend)
-        window.show()
+
+        if not icon.isNull():
+            window.setWindowIcon(icon)
+
+        # Start maximized — works on Windows, Linux, and Raspberry Pi.
+        # Swap for window.showFullScreen() if you want kiosk mode (no title bar).
+        window.showMaximized()
+
     except Exception as e:
         QMessageBox.critical(None, "Window Error",
                              f"Failed to create application window:\n{e}")

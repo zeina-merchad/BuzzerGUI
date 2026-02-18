@@ -1,6 +1,6 @@
 # app/ui/screens/host_screen.py
 from typing import Optional
-
+from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
@@ -483,6 +483,33 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.round_badge.hide()  # shown only when cfg.rounds > 1
         timer_row_layout.addWidget(self.round_badge, alignment=Qt.AlignVCenter)
         timer_row_layout.addStretch()
+
+        # ── Company logo placeholder ─────────────────────────────────────────
+        # To use a real logo: replace QLabel with a QLabel that loads a QPixmap,
+        # e.g.:
+        #   from PySide6.QtGui import QPixmap
+        #   self.logo_label.setPixmap(
+        #       QPixmap("path/to/logo.png").scaled(
+        #           120, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        #       )
+        #   )
+        self.logo_label = QLabel("YOUR\nLOGO")
+        self.logo_label.setPixmap(
+               QPixmap(r"app\\ui\\screens\\logo_full.png").scaled(
+                120, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.logo_label.setAlignment(Qt.AlignCenter)
+        self.logo_label.setAlignment(Qt.AlignCenter)
+        self.logo_label.setFixedSize(120, 60)
+        self.logo_label.setStyleSheet(
+            "QLabel { "
+            "color: rgba(255, 255, 255, 0.25); "
+            "font-size: 13px; font-weight: 900; letter-spacing: 2px; "
+            "background: rgba(255, 255, 255, 0.05); "
+            "border: 2px dashed rgba(255, 255, 255, 0.15); "
+            "border-radius: 8px; "
+            "}"
+        )
+        timer_row_layout.addWidget(self.logo_label, alignment=Qt.AlignVCenter)
 
         center_layout.addWidget(timer_row, alignment=Qt.AlignCenter)
 
