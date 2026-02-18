@@ -39,11 +39,12 @@ REMOTE_KEYS: dict[str, Qt.Key] = {
     #
     # Button on remote         Qt.Key constant                  hex
     # ─────────────────────────────────────────────────────────────────────────
-    "start_game":      Qt.Key.Key_MediaTogglePlayPause,  # ⏯  Play/Pause   0x01000086
+    "start_game":      Qt.Key.Key_MediaPlay,  # ⏯  Play/Pause   0x01000080
     "unlock_buzzers":  Qt.Key.Key_Return,                # OK / Enter      0x01000004
-    "next_question":   Qt.Key.Key_PageDown,              # Page▼           0x01000017
+    "next_question":   Qt.Key.Key_Right,              # Pageleft          0x01000014
+    "prev_question":   Qt.Key.Key_Left,   
     "reset_game":      Qt.Key.Key_Menu,                  # ☰  Menu         0x01000055
-    "bonus_point":     Qt.Key.Key_VolumeUp,              # Vol+            0x01000072
+    "bonus_point":     Qt.Key.Key_Down,              # D-pad down        0x01000015
 
     # ── Spare buttons (uncomment to assign) ─────────────────────────────────
     # "...":  Qt.Key.Key_Up,          # ↑  D-pad        0x01000013

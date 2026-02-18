@@ -272,6 +272,43 @@ class GameEngine(QObject):
         print(f"[ENGINE] Question started: {self.current_question().text[:50]}...")
         print("[ENGINE] ⏸️ Timer paused - waiting for admin to unlock")
 
+    def prev_question(self) -> None:
+        """Step back to the previous question (host correction / remote shortcut)."""
+        if self.current_q_idx < 1:
+            print("[ENGINE] ⚠️  Already at the first question — cannot go back")
+            return
+
+        # Stop any running timer
+        self.timer.stop()
+
+        # Remove current question from answered set (it wasn't completed)
+        self.answered_questions.discard(self.current_q_idx)
+
+        # Step back
+        self.current_q_idx -= 1
+
+        # Also unmark the previous question so it can be re-attempted fresh
+        self.answered_questions.discard(self.current_q_idx)
+
+        # Reset all per-question state
+        self.locked_buzzer_id = None
+        self.lock_changed.emit(None)
+        self.current_attempt_number = 1
+        self.players_attempted.clear()
+        self.attempt_records.clear()
+        self.attempt_changed.emit(self.current_attempt_number)
+        self.buzz_unlock_time_ms = 0
+        self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
+        self._answer_remaining_ms = 0
+
+        self.phase = Phase.SHOW_QUESTION
+        self.phase_changed.emit(self.phase.value)
+        self.question_changed.emit()
+        self.question_advanced.emit()
+
+        print(f"[ENGINE] ⏮ Went back to Q{self.current_q_idx + 1}")
+        print("[ENGINE] ⏸️ Timer paused - waiting for admin to unlock")
+        
     def next_question(self) -> None:
         """Move to next question."""
         if self.phase == Phase.GAME_END:
@@ -719,3 +756,5 @@ class GameEngine(QObject):
                         return
 
                 self._on_all_attempts_exhausted()
+
+    

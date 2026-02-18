@@ -27,6 +27,7 @@ except ImportError:
         "start_game":     Qt.Key.Key_MediaPlay,
         "unlock_buzzers": Qt.Key.Key_Return,
         "next_question":  Qt.Key.Key_MediaNext,
+        "prev_question":  Qt.Key.Key_MediaPrevious,
         "reset_game":     Qt.Key.Key_MediaStop,
         "bonus_point":    Qt.Key.Key_HomePage,
     }
@@ -67,6 +68,10 @@ class RemoteKeyHandler:
         elif action == "next_question":
             if self.btn_next.isVisible() and self.btn_next.isEnabled():
                 self._load_next_question()
+        
+        elif action == "prev_question":                          # ← add this block
+            if self.game_started:
+                self._load_prev_question()
 
         elif action == "reset_game":
             if not hasattr(self, "_remote_reset_armed"):
@@ -748,6 +753,16 @@ class HostScreen(RemoteKeyHandler, QWidget):
         else:
             self.round_badge.hide()
 
+    def _load_prev_question(self):
+        """Step back to the previous question (remote control / host correction)."""
+        if not self.game_started:
+            return
+        if self.engine.current_q_idx < 1:
+            self.status_label.setText("⏮️ Already at the first question.")
+            return
+        self.engine.prev_question()
+        self._prepare_current_question_ui()
+        
     def _load_next_question(self):
         if not self.game_started:
             return
