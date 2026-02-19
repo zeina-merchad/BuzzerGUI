@@ -58,6 +58,10 @@ class MediaView(QWidget):
         self.media_player.setAudioOutput(self.audio_output)
         self.media_player.setVideoOutput(self.video_widget)
 
+        # Stored pixmap for resize-aware scaling (FIX W-04)
+        self._current_pixmap = None
+        self._current_image_path = None
+
         # Media controls
         self.controls_widget = QWidget()
         self.controls_widget.setStyleSheet("background: transparent;")
@@ -127,6 +131,10 @@ class MediaView(QWidget):
         """Clear media area and stop playback"""
         self._stop_media()
         self.current_media_type = None
+        # FIX W-04: clear stored pixmap so resizeEvent does not re-scale
+        # a pixmap that belongs to a previous question.
+        self._current_pixmap = None
+        self._current_image_path = None
         self.image_box.setPixmap(QPixmap())
         self.image_box.setText("")
         self._hide_video()
@@ -198,7 +206,12 @@ class MediaView(QWidget):
         self.controls_widget.hide()
 
     def show_image(self, image_path: str):
-        """Load and display actual image"""
+        """Load and display actual image.
+
+        FIX W-04: image is now scaled to the widget's current size rather than
+        a hardcoded 1000×650 maximum.  A _current_image_path attribute is kept
+        so resizeEvent can re-scale the same image when the window is resized.
+        """
         self.show()
         self._stop_media()
         self._hide_video()
@@ -211,12 +224,11 @@ class MediaView(QWidget):
             self.image_box.setMinimumHeight(0)
             self.image_box.setMaximumHeight(16777215)
 
-            scaled_pixmap = pixmap.scaled(
-                1000, 650,
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
-            )
-            self.image_box.setPixmap(scaled_pixmap)
+            # Store original pixmap so resizeEvent can re-scale it.
+            self._current_pixmap = pixmap
+            self._current_image_path = image_path
+            self._scale_pixmap_to_box()
+
             self.image_box.setStyleSheet(
                 "border: 4px solid #39FF14; "
                 "border-radius: 16px; "
@@ -226,7 +238,31 @@ class MediaView(QWidget):
             self.image_box.show()
             self.controls_widget.hide()
         else:
+            self._current_pixmap = None
+            self._current_image_path = None
             self._show_error(f"IMAGE NOT FOUND\n\n{image_path}")
+
+    def _scale_pixmap_to_box(self):
+        """Scale the stored pixmap to fit the current image_box size."""
+        if not hasattr(self, '_current_pixmap') or self._current_pixmap is None:
+            return
+        box_size = self.image_box.size()
+        # Use the widget size, but fall back to a sensible minimum so the
+        # image is visible even before the widget is fully laid out.
+        w = max(box_size.width() - 30, 200)   # subtract padding
+        h = max(box_size.height() - 30, 150)
+        scaled = self._current_pixmap.scaled(
+            w, h,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
+        self.image_box.setPixmap(scaled)
+
+    def resizeEvent(self, event):
+        """Re-scale the image when the widget is resized (FIX W-04)."""
+        super().resizeEvent(event)
+        if self.current_media_type == "image":
+            self._scale_pixmap_to_box()
 
     def show_video(self, video_path: str):
         """Load and display video with playback controls"""
@@ -425,4 +461,7 @@ class MediaView(QWidget):
         self._stop_media()
         self.media_player.setSource(QUrl())
         self.current_media_type = None
+        # FIX W-04: clear stored pixmap on cleanup
+        self._current_pixmap = None
+        self._current_image_path = None
         self._hide_video()
