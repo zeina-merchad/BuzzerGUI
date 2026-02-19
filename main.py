@@ -14,20 +14,72 @@ from app.hardware.mqtt_buzzer import MQTTBuzzerBackend
 def resource_path(rel: str) -> str:
     """Resolve a resource path that works both in dev and PyInstaller --onedir bundles."""
     if getattr(sys, 'frozen', False):
-        # Running as PyInstaller bundle — files land in _internal/ (PyInstaller 6+)
         base = os.path.dirname(sys.executable)
         internal = os.path.join(base, "_internal")
         path = os.path.join(internal, rel)
         if os.path.exists(path):
             return path
-        # Fallback: some files may sit next to the executable
         path = os.path.join(base, rel)
         if os.path.exists(path):
             return path
-        return os.path.join(internal, rel)  # return best guess even if missing
+        return os.path.join(internal, rel)
     else:
-        # Running in dev — relative to this file's directory
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), rel)
+
+
+def create_desktop_shortcut() -> None:
+    """Create a .desktop shortcut on Linux/Raspberry Pi. Silent no-op on Windows."""
+    if sys.platform == "win32":
+        return
+
+    # Only create shortcut when running as a packaged bundle, not in dev
+    if not getattr(sys, 'frozen', False):
+        return
+
+    exe_path = os.path.abspath(sys.executable)
+    base = os.path.dirname(exe_path)
+    internal = os.path.join(base, "_internal")
+
+    # Find the icon next to the exe or inside _internal/
+    icon_path = ""
+    for candidate in [
+        os.path.join(internal, "assets", "logo.png"),
+        os.path.join(base,     "assets", "logo.png"),
+    ]:
+        if os.path.exists(candidate):
+            icon_path = candidate
+            break
+
+    desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
+    os.makedirs(desktop_dir, exist_ok=True)
+    shortcut_path = os.path.join(desktop_dir, "FootballQuiz.desktop")
+
+    # Don't overwrite if it already points to the right executable
+    if os.path.exists(shortcut_path):
+        try:
+            with open(shortcut_path, "r") as f:
+                if exe_path in f.read():
+                    return  # already up to date
+        except Exception:
+            pass
+
+    content = f"""[Desktop Entry]
+                Name=Football Quiz
+                Comment=Buzzer Quiz Game
+                Exec={exe_path}
+                Icon={icon_path}
+                Terminal=false
+                Type=Application
+                Categories=Game;
+                StartupNotify=true
+                """
+    try:
+        with open(shortcut_path, "w") as f:
+            f.write(content)
+        os.chmod(shortcut_path, 0o755)
+        print(f"[OK] Desktop shortcut created: {shortcut_path}")
+    except Exception as e:
+        print(f"[WARNING] Could not create desktop shortcut: {e}")
 
 
 def _make_empty_config() -> GameConfig:
@@ -50,17 +102,11 @@ def _make_empty_config() -> GameConfig:
 
 
 class _NoOpMQTTBackend:
-    """Stub backend used in --no-mqtt / demo mode.
-
-    FIX #6: allows the app to run without a live MQTT broker for development
-    and testing.  All methods are no-ops; callbacks are never fired so the
-    engine stays in manual-only mode (admin clicks UNLOCK / NEXT manually).
-    """
+    """Stub backend used in --no-mqtt / demo mode."""
     connected = False
     state = None
 
     class _Bridge:
-        """Minimal signal stub so HostScreen's bridge.heartbeat_resolved.connect() doesn't crash."""
         class _Sig:
             def connect(self, *a, **kw): pass
             def emit(self, *a, **kw): pass
@@ -98,13 +144,13 @@ def main():
     app.setOrganizationName("Football Trivia Game")
 
     # ── Icon loading ──────────────────────────────────────────────────────────
-    # Tries .ico first (Windows), then .png (Linux / Raspberry Pi).
-    # Place your icon at assets/icon.png for Pi builds,
-    # or assets/icon.ico for Windows builds.
+    # .ico for Windows, .png for Linux / Raspberry Pi
     icon = QIcon()
     icon_candidates = [
-        "assets/logo.png",   # Linux / Raspberry Pi packaged
-        "logo.png",          # Linux / Raspberry Pi flat layout
+        "assets/icon.ico",   # Windows packaged
+        "icon.ico",          # Windows flat layout
+        "assets/icon.png",   # Linux / Raspberry Pi packaged
+        "icon.png",          # Linux / Raspberry Pi flat layout
     ]
     for try_path in icon_candidates:
         full_path = resource_path(try_path)
@@ -116,6 +162,9 @@ def main():
                 break
     else:
         print(f"[WARNING] No icon found — tried: {', '.join(icon_candidates)}")
+
+    # ── Desktop shortcut (Pi / Linux only, packaged builds only) ─────────────
+    create_desktop_shortcut()
 
     # FIX #6: --no-mqtt flag (or NO_MQTT=1 env var) enables demo/offline mode
     no_mqtt = "--no-mqtt" in sys.argv or os.environ.get("NO_MQTT", "0") == "1"
@@ -158,7 +207,6 @@ def main():
             elif reply == QMessageBox.Ignore:
                 print("[WARNING] Continuing without MQTT connection — hardware will not work")
             else:
-                # Retry once — if it fails again, fall through to offline mode
                 if not mqtt_backend.connect():
                     print("[WARNING] MQTT retry failed — switching to demo mode")
                     mqtt_backend = _NoOpMQTTBackend()
@@ -173,8 +221,7 @@ def main():
         if not icon.isNull():
             window.setWindowIcon(icon)
 
-        # Start maximized — works on Windows, Linux, and Raspberry Pi.
-        # Swap for window.showFullScreen() if you want kiosk mode (no title bar).
+        # Start maximized. Swap for showFullScreen() for kiosk/no-title-bar mode.
         window.showMaximized()
 
     except Exception as e:
@@ -184,11 +231,10 @@ def main():
         sys.exit(1)
 
     try:
-        dashboard = window.admin_dashboard  # triggers lazy creation + internal wiring
+        dashboard = window.admin_dashboard
         print("[OK] AdminDashboard wired ✓")
     except AttributeError as exc:
         print(f"[WARNING] Could not wire AdminDashboard: {exc}")
-        print("          Ensure AppWindow exposes self.admin_dashboard")
 
     # ── READY ─────────────────────────────────────────────────────────────────
     mode_str = "DEMO (no hardware)" if isinstance(mqtt_backend, _NoOpMQTTBackend) else \
