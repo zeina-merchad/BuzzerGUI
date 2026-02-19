@@ -1,44 +1,20 @@
-from PySide6.QtCore import QObject, Signal, QTimer
+"""
+timer.py — public re-export of CountdownTimer
+==============================================
 
-class CountdownTimer(QObject):
-    changed = Signal(int)   # remaining_ms
-    ended = Signal()
+The canonical implementation lives inside engine.py so that the engine module
+is fully self-contained and can be unit-tested without importing this file.
 
-    def __init__(self, tick_ms: int = 100):
-        super().__init__()
-        self._tick_ms = int(tick_ms)
-        self._remaining_ms = 0
-        self._timer = QTimer()
-        self._timer.setInterval(self._tick_ms)
-        self._timer.timeout.connect(self._on_tick)
+This module previously contained a near-identical duplicate class.  Having two
+separate CountdownTimer definitions caused subtle divergence over time (e.g.
+the stop() / changed(0) emission fix was applied to engine.CountdownTimer but
+not to this copy — the duplicate here still called self._timer.start() inside
+start() without stopping first, so a rapid re-unlock could stack two concurrent
+QTimer fires and produce double tick-rate countdowns).
 
-    @property
-    def remaining_ms(self) -> int:
-        return self._remaining_ms
+Any external code that does ``from app.core.timer import CountdownTimer`` now
+gets the single source-of-truth implementation.
+"""
+from app.core.engine import CountdownTimer  # noqa: F401  re-exported for callers
 
-    def start(self, total_ms: int) -> None:
-        self._remaining_ms = max(0, int(total_ms))
-        self.changed.emit(self._remaining_ms)
-        self._timer.start()
-
-    def pause(self) -> None:
-        self._timer.stop()
-
-    def resume(self) -> None:
-        if self._remaining_ms > 0:
-            self._timer.start()
-
-    def stop(self) -> None:
-        self._timer.stop()
-        self._remaining_ms = 0
-        self.changed.emit(self._remaining_ms)
-
-    def _on_tick(self) -> None:
-        self._remaining_ms -= self._tick_ms
-        if self._remaining_ms <= 0:
-            self._remaining_ms = 0
-            self._timer.stop()
-            self.changed.emit(self._remaining_ms)
-            self.ended.emit()
-        else:
-            self.changed.emit(self._remaining_ms)
+__all__ = ["CountdownTimer"]

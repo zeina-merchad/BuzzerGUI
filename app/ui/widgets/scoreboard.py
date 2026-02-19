@@ -32,7 +32,7 @@ class PlayerCard(QFrame):
         self.name = QLabel(f"PLAYER {player_id}")
         self.name.setStyleSheet(
             "font-size: 14px; font-weight: 900; letter-spacing: 1px; "
-            "color: #2c3e50;"
+            "color: rgba(255, 255, 255, 0.85);"  # FIX M: was dark #2c3e50
         )
         self.name.setAlignment(Qt.AlignCenter)
 
@@ -46,7 +46,7 @@ class PlayerCard(QFrame):
         self.score = QLabel("0")
         self.score.setAlignment(Qt.AlignCenter)
         self.score.setStyleSheet(
-            "font-size: 42px; font-weight: 900; color: #2c3e50; "
+            "font-size: 42px; font-weight: 900; color: white; "  # FIX M: was dark #2c3e50
             "padding: 8px;"
         )
 
@@ -54,7 +54,7 @@ class PlayerCard(QFrame):
         score_label = QLabel("POINTS")
         score_label.setAlignment(Qt.AlignCenter)
         score_label.setStyleSheet(
-            "font-size: 10px; font-weight: 900; color: #7f8c8d; "
+            "font-size: 10px; font-weight: 900; color: rgba(255, 255, 255, 0.5); "  # FIX M
             "letter-spacing: 1px;"
         )
 
@@ -72,13 +72,26 @@ class PlayerCard(QFrame):
         lay.addWidget(score_label)
 
     def _set_normal_style(self):
+        # FIX M: was white/light-grey card with dark text — clashed with the
+        # dark game UI.  Updated to match the dark theme used everywhere else.
         self.setStyleSheet(
             "QFrame { "
             "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 #ffffff, stop:1 #f8f9fa);"
-            "border: 3px solid #ecf0f1;"
+            "stop:0 rgba(30, 40, 55, 0.95), stop:1 rgba(20, 28, 42, 0.95));"
+            "border: 3px solid rgba(255, 255, 255, 0.15);"
             "border-radius: 16px;"
             "}"
+        )
+
+    def _reset_label_styles(self):
+        """Restore dark-theme text colours after unhighlighting."""
+        self.name.setStyleSheet(
+            "font-size: 14px; font-weight: 900; letter-spacing: 1px; "
+            "color: rgba(255, 255, 255, 0.85);"
+        )
+        self.score.setStyleSheet(
+            "font-size: 42px; font-weight: 900; color: white; "
+            "padding: 8px;"
         )
 
     def set_connected(self, is_connected: bool):
@@ -105,7 +118,6 @@ class PlayerCard(QFrame):
                 f"border-radius: 16px;"
                 f"}}"
             )
-            # Make text white when highlighted
             self.name.setStyleSheet(
                 "font-size: 14px; font-weight: 900; letter-spacing: 1px; "
                 "color: white;"
@@ -116,14 +128,7 @@ class PlayerCard(QFrame):
             )
         else:
             self._set_normal_style()
-            self.name.setStyleSheet(
-                "font-size: 14px; font-weight: 900; letter-spacing: 1px; "
-                "color: #2c3e50;"
-            )
-            self.score.setStyleSheet(
-                "font-size: 42px; font-weight: 900; color: #2c3e50; "
-                "padding: 8px;"
-            )
+            self._reset_label_styles()  # FIX M: was hardcoded dark #2c3e50 text
 
     def _darken_color(self, hex_color: str) -> str:
         """Darken a hex color by 20% for gradient effect"""

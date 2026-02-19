@@ -1,351 +1,330 @@
 """
 Round Transition Screen
-Shows between rounds with current scores and next round info
+Compact popup dialog shown between rounds with current scores and next round info.
 """
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFrame, QGridLayout
+    QDialog, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QFrame, QGridLayout, QWidget
 )
 
 
-class RoundTransitionScreen(QWidget):
-    """Screen shown between rounds"""
-    
-    def __init__(self):
-        super().__init__()
-        
-        # Team colors
+class RoundTransitionScreen(QDialog):
+    """Compact centered popup shown between rounds."""
+
+    DIALOG_W = 920
+    DIALOG_H = 640
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setWindowFlags(
+            Qt.Dialog
+            | Qt.FramelessWindowHint
+            | Qt.WindowStaysOnTopHint
+        )
+        self.setFixedSize(self.DIALOG_W, self.DIALOG_H)
+
         self.team_colors = {
-            1: "#e74c3c",  # Red
-            2: "#3498db",  # Blue
-            3: "#2ecc71",  # Green
-            4: "#f39c12",  # Orange
+            1: "#e74c3c",
+            2: "#3498db",
+            3: "#2ecc71",
+            4: "#f39c12",
         }
-        
-        # Dark background
+
         self.setStyleSheet(
-            "QWidget { "
+            "QDialog { "
             "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 #0a0e27, stop:1 #1a1f3a); "
+            "stop:0 #0d1b2a, stop:1 #1a2a3a); "
+            "border: 3px solid rgba(57,255,20,0.5); "
+            "border-radius: 18px; "
             "}"
         )
-        
-        # Main layout
+
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(60, 60, 60, 60)
-        main_layout.setSpacing(40)
-        
-        # =====================================================================
-        # ROUND COMPLETE ANNOUNCEMENT
-        # =====================================================================
-        
-        self.round_complete_label = QLabel("🎯 ROUND 1 COMPLETE!")
+        main_layout.setContentsMargins(32, 28, 32, 28)
+        main_layout.setSpacing(18)
+
+        # ── Round complete header
+        self.round_complete_label = QLabel("ROUND 1 COMPLETE!")
         self.round_complete_label.setAlignment(Qt.AlignCenter)
         self.round_complete_label.setStyleSheet(
-            "font-size: 56px; font-weight: 900; color: #39FF14; "
-            "background: transparent; letter-spacing: 3px; padding: 30px;"
+            "font-size: 36px; font-weight: 900; color: #39FF14; "
+            "background: transparent; letter-spacing: 2px; padding: 8px;"
         )
         main_layout.addWidget(self.round_complete_label)
-        
-        # =====================================================================
-        # CURRENT STANDINGS
-        # =====================================================================
-        
+
+        # ── Standings frame
         standings_frame = QFrame()
         standings_frame.setStyleSheet(
             "QFrame { "
-            "background: rgba(20, 30, 45, 0.7); "
-            "border: 4px solid rgba(57, 255, 20, 0.4); "
-            "border-radius: 20px; "
-            "padding: 35px; "
+            "background: rgba(20, 30, 45, 0.85); "
+            "border: 2px solid rgba(57, 255, 20, 0.35); "
+            "border-radius: 14px; "
             "}"
         )
-        
         standings_layout = QVBoxLayout(standings_frame)
-        standings_layout.setSpacing(20)
-        
-        standings_title = QLabel("📊 CURRENT STANDINGS")
+        standings_layout.setContentsMargins(16, 12, 16, 12)
+        standings_layout.setSpacing(10)
+
+        standings_title = QLabel("CURRENT STANDINGS")
         standings_title.setAlignment(Qt.AlignCenter)
         standings_title.setStyleSheet(
-            "font-size: 28px; font-weight: 900; color: white; "
-            "background: transparent; letter-spacing: 2px; "
-            "padding-bottom: 15px;"
+            "font-size: 15px; font-weight: 900; color: rgba(255,255,255,0.7); "
+            "background: transparent; letter-spacing: 2px;"
         )
         standings_layout.addWidget(standings_title)
-        
-        # Grid for player standings (2x2)
+
         self.standings_grid = QGridLayout()
-        self.standings_grid.setSpacing(20)
+        self.standings_grid.setSpacing(10)
         self.standings_grid.setContentsMargins(0, 0, 0, 0)
-        
+
         self.player_standing_widgets = {}
-        
+
         for i in range(4):
             player_id = i + 1
-            
-            # Player standing card
+            color = self.team_colors[player_id]
+
             card = QFrame()
             card.setStyleSheet(
-                f"QFrame {{ "
-                f"background: rgba(30, 40, 55, 0.9); "
-                f"border-left: 6px solid {self.team_colors[player_id]}; "
-                f"border-radius: 12px; "
-                f"padding: 20px; "
-                f"}}"
+                f"QFrame {{ background: rgba(30,40,55,0.9); "
+                f"border-left: 5px solid {color}; "
+                f"border-radius: 10px; padding: 10px; }}"
             )
-            
+            card.setFixedHeight(72)
+
             card_layout = QHBoxLayout(card)
-            card_layout.setSpacing(20)
-            
-            # Position badge
+            card_layout.setSpacing(12)
+            card_layout.setContentsMargins(8, 4, 8, 4)
+
             position_label = QLabel("#")
             position_label.setAlignment(Qt.AlignCenter)
-            position_label.setFixedSize(60, 60)
+            position_label.setFixedSize(44, 44)
             position_label.setStyleSheet(
-                f"font-size: 28px; font-weight: 900; "
-                f"color: white; "
-                f"background: {self.team_colors[player_id]}; "
-                f"border-radius: 30px;"
+                f"font-size: 20px; font-weight: 900; color: white; "
+                f"background: {color}; border-radius: 22px;"
             )
             card_layout.addWidget(position_label)
-            
-            # Player info
+
             info_widget = QWidget()
             info_widget.setStyleSheet("QWidget { background: transparent; }")
             info_layout = QVBoxLayout(info_widget)
-            info_layout.setSpacing(5)
+            info_layout.setSpacing(2)
             info_layout.setContentsMargins(0, 0, 0, 0)
-            
+
             name_label = QLabel(f"PLAYER {player_id}")
             name_label.setStyleSheet(
-                "font-size: 22px; font-weight: 900; color: white; "
-                "background: transparent;"
+                "font-size: 15px; font-weight: 900; color: white; background: transparent;"
             )
             info_layout.addWidget(name_label)
-            
+
             score_label = QLabel("0 points")
             score_label.setStyleSheet(
-                "font-size: 18px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
-                "background: transparent;"
+                "font-size: 12px; font-weight: 700; "
+                "color: rgba(255,255,255,0.6); background: transparent;"
             )
             info_layout.addWidget(score_label)
-            
+
             card_layout.addWidget(info_widget, stretch=1)
-            
-            # Large score display
+
             big_score_label = QLabel("0")
             big_score_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             big_score_label.setStyleSheet(
-                "font-size: 42px; font-weight: 900; color: #39FF14; "
-                "background: transparent; padding-right: 10px;"
+                "font-size: 30px; font-weight: 900; color: #39FF14; "
+                "background: transparent; padding-right: 6px;"
             )
             card_layout.addWidget(big_score_label)
-            
-            # Store references
+
             self.player_standing_widgets[player_id] = {
                 'card': card,
                 'position': position_label,
                 'score_text': score_label,
-                'big_score': big_score_label
+                'big_score': big_score_label,
             }
-            
-            # Add to grid (2x2)
-            row = i // 2
-            col = i % 2
-            self.standings_grid.addWidget(card, row, col)
-        
+
+            self.standings_grid.addWidget(card, i // 2, i % 2)
+
         standings_layout.addLayout(self.standings_grid)
         main_layout.addWidget(standings_frame, stretch=1)
-        
-        # =====================================================================
-        # NEXT ROUND INFO
-        # =====================================================================
-        
-        next_round_frame = QFrame()
-        next_round_frame.setStyleSheet(
-            "QFrame { "
-            "background: rgba(57, 255, 20, 0.15); "
-            "border: 3px solid #39FF14; "
-            "border-radius: 16px; "
-            "padding: 25px; "
-            "}"
+
+        # ── Next round row
+        next_frame = QFrame()
+        next_frame.setStyleSheet(
+            "QFrame { background: rgba(57,255,20,0.10); "
+            "border: 2px solid #39FF14; border-radius: 12px; padding: 10px; }"
         )
-        
-        next_round_layout = QVBoxLayout(next_round_frame)
-        next_round_layout.setSpacing(10)
-        
-        up_next_label = QLabel("⏭️ UP NEXT")
-        up_next_label.setAlignment(Qt.AlignCenter)
-        up_next_label.setStyleSheet(
-            "font-size: 20px; font-weight: 900; color: rgba(255, 255, 255, 0.7); "
+        next_layout = QHBoxLayout(next_frame)
+        next_layout.setSpacing(16)
+
+        up_next = QLabel("UP NEXT")
+        up_next.setStyleSheet(
+            "font-size: 13px; font-weight: 900; color: rgba(255,255,255,0.55); "
             "background: transparent; letter-spacing: 2px;"
         )
-        next_round_layout.addWidget(up_next_label)
-        
+        next_layout.addWidget(up_next)
+
         self.next_round_label = QLabel("ROUND 2")
-        self.next_round_label.setAlignment(Qt.AlignCenter)
         self.next_round_label.setStyleSheet(
-            "font-size: 40px; font-weight: 900; color: #39FF14; "
-            "background: transparent; padding: 10px;"
+            "font-size: 26px; font-weight: 900; color: #39FF14; background: transparent;"
         )
-        next_round_layout.addWidget(self.next_round_label)
-        
+        next_layout.addWidget(self.next_round_label)
+
+        next_layout.addStretch()
+
         self.questions_info_label = QLabel("5 Questions")
-        self.questions_info_label.setAlignment(Qt.AlignCenter)
         self.questions_info_label.setStyleSheet(
-            "font-size: 18px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
-            "background: transparent;"
+            "font-size: 14px; font-weight: 700; "
+            "color: rgba(255,255,255,0.6); background: transparent;"
         )
-        next_round_layout.addWidget(self.questions_info_label)
-        
-        main_layout.addWidget(next_round_frame)
-        
-        # =====================================================================
-        # CONTINUE BUTTON
-        # =====================================================================
-        
-        self.btn_continue = QPushButton("▶️ START NEXT ROUND")
-        self.btn_continue.setFixedHeight(80)
+        next_layout.addWidget(self.questions_info_label)
+
+        main_layout.addWidget(next_frame)
+
+        # ── Continue button
+        self.btn_continue = QPushButton("START NEXT ROUND")
+        self.btn_continue.setFixedHeight(56)
         self.btn_continue.setStyleSheet(
             "QPushButton { "
-            "background: rgba(57, 255, 20, 0.3); "
-            "border: 4px solid #39FF14; "
-            "border-radius: 12px; "
-            "padding: 25px 50px; "
-            "font-size: 28px; "
-            "font-weight: 900; "
-            "color: white; "
-            "}"
-            "QPushButton:hover { "
-            "background: rgba(57, 255, 20, 0.5); "
-            "border: 5px solid #39FF14; "
-            "}"
-            "QPushButton:pressed { background: rgba(57, 255, 20, 0.7); }"
+            "background: rgba(57,255,20,0.22); "
+            "border: 3px solid #39FF14; border-radius: 10px; "
+            "font-size: 20px; font-weight: 900; color: white; }"
+            "QPushButton:hover { background: rgba(57,255,20,0.42); }"
+            "QPushButton:pressed { background: rgba(57,255,20,0.62); }"
+            "QPushButton:disabled { background: rgba(80,80,80,0.2); "
+            "border-color: #555; color: #666; }"
         )
-        main_layout.addWidget(self.btn_continue, alignment=Qt.AlignCenter)
-        
-        # Auto-continue countdown (optional)
-        self.countdown_label = QLabel("Auto-starting in 10 seconds...")
+        main_layout.addWidget(self.btn_continue)
+
+        self.countdown_label = QLabel("")
         self.countdown_label.setAlignment(Qt.AlignCenter)
         self.countdown_label.setStyleSheet(
-            "font-size: 16px; font-weight: 700; color: rgba(255, 255, 255, 0.5); "
-            "background: transparent; padding: 10px;"
+            "font-size: 13px; color: rgba(255,255,255,0.4); background: transparent;"
         )
-        self.countdown_label.hide()  # Hidden by default
+        self.countdown_label.hide()
         main_layout.addWidget(self.countdown_label)
-        
-        # Stretch factors
-        main_layout.setStretchFactor(self.round_complete_label, 0)
-        main_layout.setStretchFactor(standings_frame, 2)
-        main_layout.setStretchFactor(next_round_frame, 0)
-        main_layout.setStretchFactor(self.btn_continue, 0)
-    
-    def set_round_info(self, completed_round: int, next_round: int, scores: dict, questions_in_next: int):
-        """
-        Set round transition information
-        
-        Args:
-            completed_round: Round number that just finished
-            next_round: Next round number
-            scores: Dict of {player_id: score}
-            questions_in_next: Number of questions in next round
-        """
-        # Update round labels
-        self.round_complete_label.setText(f"🎯 ROUND {completed_round} COMPLETE!")
-        self.next_round_label.setText(f"ROUND {next_round}")
-        
-        if questions_in_next == 1:
-            self.questions_info_label.setText("1 Question")
+
+    # ── Centering ─────────────────────────────────────────────────────────────
+
+    def center_on_parent(self):
+        if self.parent():
+            pg = self.parent().geometry()
+            self.move(
+                pg.x() + (pg.width()  - self.width())  // 2,
+                pg.y() + (pg.height() - self.height()) // 2,
+            )
         else:
-            self.questions_info_label.setText(f"{questions_in_next} Questions")
-        
-        # Sort players by score
+            from PySide6.QtGui import QGuiApplication
+            sg = QGuiApplication.primaryScreen().geometry()
+            self.move(
+                (sg.width()  - self.width())  // 2,
+                (sg.height() - self.height()) // 2,
+            )
+
+    # ── Data ──────────────────────────────────────────────────────────────────
+
+    def set_round_info(self, completed_round: int, next_round: int,
+                       scores: dict, questions_in_next: int):
+        self.round_complete_label.setText(f"ROUND {completed_round} COMPLETE!")
+        self.next_round_label.setText(f"ROUND {next_round}")
+        self.questions_info_label.setText(
+            "1 Question" if questions_in_next == 1 else f"{questions_in_next} Questions"
+        )
+
         ranked_players = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        
-        # Position indicators
-        position_emojis = {
-            1: "🥇",
-            2: "🥈",
-            3: "🥉",
-            4:  "4️⃣"
-        }
-        
-        # Update standings
+        position_emojis = {1: "🥇", 2: "🥈", 3: "🥉", 4: "🎖️"}
+        grid_positions  = [(0, 0), (0, 1), (1, 0), (1, 1)]
+
         for position, (player_id, score) in enumerate(ranked_players, start=1):
-            widgets = self.player_standing_widgets[player_id]
-            
-            # Update position
-            widgets['position'].setText(position_emojis[position])
-            
-            # Update scores
-            widgets['score_text'].setText(f"{score} points")
-            widgets['big_score'].setText(str(score))
-            
-            # Highlight leader
+            if player_id not in self.player_standing_widgets:
+                continue
+            w = self.player_standing_widgets[player_id]
+
+            row, col = grid_positions[position - 1]
+            self.standings_grid.addWidget(w['card'], row, col)
+
+            w['position'].setText(position_emojis[position])
+            w['score_text'].setText(f"{score} points")
+            w['big_score'].setText(str(score))
+
+            color = self.team_colors.get(player_id, "#888")
             if position == 1:
-                widgets['card'].setStyleSheet(
+                w['card'].setStyleSheet(
                     f"QFrame {{ "
-                    f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-                    f"stop:0 rgba(255, 215, 0, 0.2), "
-                    f"stop:1 {self.team_colors[player_id]}40); "
-                    f"border-left: 8px solid {self.team_colors[player_id]}; "
-                    f"border: 3px solid #ffd700; "
-                    f"border-radius: 12px; "
-                    f"padding: 20px; "
-                    f"}}"
+                    f"background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+                    f"stop:0 rgba(255,215,0,0.18),stop:1 {color}30); "
+                    f"border-left: 5px solid {color}; border: 2px solid #ffd700; "
+                    f"border-radius: 10px; padding: 10px; }}"
                 )
-                widgets['big_score'].setStyleSheet(
-                    "font-size: 48px; font-weight: 900; color: #ffd700; "
-                    "background: transparent; padding-right: 10px;"
+                w['big_score'].setStyleSheet(
+                    "font-size: 30px; font-weight: 900; color: #ffd700; "
+                    "background: transparent; padding-right: 6px;"
                 )
             else:
-                widgets['card'].setStyleSheet(
-                    f"QFrame {{ "
-                    f"background: rgba(30, 40, 55, 0.9); "
-                    f"border-left: 6px solid {self.team_colors[player_id]}; "
-                    f"border-radius: 12px; "
-                    f"padding: 20px; "
-                    f"}}"
+                w['card'].setStyleSheet(
+                    f"QFrame {{ background: rgba(30,40,55,0.9); "
+                    f"border-left: 5px solid {color}; "
+                    f"border-radius: 10px; padding: 10px; }}"
                 )
-                widgets['big_score'].setStyleSheet(
-                    "font-size: 42px; font-weight: 900; color: #39FF14; "
-                    "background: transparent; padding-right: 10px;"
+                w['big_score'].setStyleSheet(
+                    "font-size: 30px; font-weight: 900; color: #39FF14; "
+                    "background: transparent; padding-right: 6px;"
                 )
-    
+
+    # ── Fade ──────────────────────────────────────────────────────────────────
+
+    def fade_in(self, duration_ms: int = 400, callback=None):
+        self.center_on_parent()
+        self.setWindowOpacity(0.0)
+        self._fade_anim = QPropertyAnimation(self, b"windowOpacity")
+        self._fade_anim.setDuration(duration_ms)
+        self._fade_anim.setStartValue(0.0)
+        self._fade_anim.setEndValue(1.0)
+        self._fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        if callback:
+            self._fade_anim.finished.connect(callback)
+        self._fade_anim.start()
+
+    def fade_out(self, duration_ms: int = 300, callback=None):
+        self._fade_anim = QPropertyAnimation(self, b"windowOpacity")
+        self._fade_anim.setDuration(duration_ms)
+        self._fade_anim.setStartValue(1.0)
+        self._fade_anim.setEndValue(0.0)
+        self._fade_anim.setEasingCurve(QEasingCurve.Type.InCubic)
+        if callback:
+            self._fade_anim.finished.connect(callback)
+        self._fade_anim.start()
+
+    # ── Countdown ─────────────────────────────────────────────────────────────
+
     def start_auto_countdown(self, seconds: int = 10):
-        """Start auto-continue countdown"""
+        if hasattr(self, 'countdown_timer') and self.countdown_timer.isActive():
+            self.countdown_timer.stop()
         self.countdown_label.show()
         self.countdown_seconds = seconds
         self._update_countdown()
-        
-        self.countdown_timer = QTimer()
+        self.countdown_timer = QTimer(self)
         self.countdown_timer.timeout.connect(self._countdown_tick)
-        self.countdown_timer.start(1000)  # 1 second intervals
-    
+        self.countdown_timer.start(1000)
+
     def stop_auto_countdown(self):
-        """Stop auto-continue countdown"""
-        if hasattr(self, 'countdown_timer'):
+        if hasattr(self, 'countdown_timer') and self.countdown_timer.isActive():
             self.countdown_timer.stop()
         self.countdown_label.hide()
-    
+
     def _countdown_tick(self):
-        """Update countdown each second"""
         self.countdown_seconds -= 1
-        
         if self.countdown_seconds <= 0:
             self.countdown_timer.stop()
-            self.btn_continue.click()  # Auto-click continue
+            self.btn_continue.click()
         else:
             self._update_countdown()
-    
+
     def _update_countdown(self):
-        """Update countdown display"""
-        if self.countdown_seconds == 1:
-            self.countdown_label.setText("Auto-starting in 1 second...")
-        else:
-            self.countdown_label.setText(f"Auto-starting in {self.countdown_seconds} seconds...")
-    
+        s = self.countdown_seconds
+        self.countdown_label.setText(
+            f"Auto-starting in {s} second{'s' if s != 1 else ''}..."
+        )
+
     def cleanup(self):
-        """Stop any running timers"""
         self.stop_auto_countdown()

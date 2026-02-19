@@ -1,187 +1,251 @@
-"""
-Football Buzzer - Main Entry Point
-MQTT Hardware Backend Only - No Simulations
-"""
-
 import sys
+import os
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtGui import QIcon
 
 from app.config import get_config
-from app.core.loaders import load_pack, create_demo_pack, PackError
 from app.core.engine import GameEngine
+from app.core.models import GameConfig
 from app.hardware.mqtt_buzzer import MQTTBuzzerBackend
-from app.ui.screens.host_screen import HostScreen
+
+
+def resource_path(rel: str) -> str:
+    """Resolve a resource path that works both in dev and PyInstaller --onedir bundles."""
+    if getattr(sys, 'frozen', False):
+        base = os.path.dirname(sys.executable)
+        internal = os.path.join(base, "_internal")
+        path = os.path.join(internal, rel)
+        if os.path.exists(path):
+            return path
+        path = os.path.join(base, rel)
+        if os.path.exists(path):
+            return path
+        return os.path.join(internal, rel)
+    else:
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), rel)
+
+
+def create_desktop_shortcut() -> None:
+    """Create a .desktop shortcut on Linux/Raspberry Pi. Silent no-op on Windows."""
+    if sys.platform == "win32":
+        return
+
+    # Only create shortcut when running as a packaged bundle, not in dev
+    if not getattr(sys, 'frozen', False):
+        return
+
+    exe_path = os.path.abspath(sys.executable)
+    base = os.path.dirname(exe_path)
+    internal = os.path.join(base, "_internal")
+
+    # Find the icon next to the exe or inside _internal/
+    icon_path = ""
+    for candidate in [
+        os.path.join(internal, "assets", "logo.png"),
+        os.path.join(base,     "assets", "logo.png"),
+    ]:
+        if os.path.exists(candidate):
+            icon_path = candidate
+            break
+
+    desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
+    os.makedirs(desktop_dir, exist_ok=True)
+    shortcut_path = os.path.join(desktop_dir, "FootballQuiz.desktop")
+
+    # Don't overwrite if it already points to the right executable
+    if os.path.exists(shortcut_path):
+        try:
+            with open(shortcut_path, "r") as f:
+                if exe_path in f.read():
+                    return  # already up to date
+        except Exception:
+            pass
+
+    content = f"""[Desktop Entry]
+                Name=Football Quiz
+                Comment=Buzzer Quiz Game
+                Exec={exe_path}
+                Icon={icon_path}
+                Terminal=false
+                Type=Application
+                Categories=Game;
+                StartupNotify=true
+                """
+    try:
+        with open(shortcut_path, "w") as f:
+            f.write(content)
+        os.chmod(shortcut_path, 0o755)
+        print(f"[OK] Desktop shortcut created: {shortcut_path}")
+    except Exception as e:
+        print(f"[WARNING] Could not create desktop shortcut: {e}")
+
+
+def _make_empty_config() -> GameConfig:
+    """Minimal config — no questions. Engine populated by AdminDashboard."""
+    return GameConfig(
+        name="No Pack Loaded",
+        version=1,
+        rounds=1,
+        questions_per_round=10,
+        timer_seconds=20,
+        answer_seconds=8,
+        shuffle_questions=False,
+        question_files=(),
+        pack_dir=Path.cwd(),
+        enable_cascading_attempts=True,
+        reset_timer_each_attempt=False,
+        penalty_for_wrong=0,
+        bonus_for_speed=False,
+    )
+
+
+class _NoOpMQTTBackend:
+    """Stub backend used in --no-mqtt / demo mode."""
+    connected = False
+    state = None
+
+    class _Bridge:
+        class _Sig:
+            def connect(self, *a, **kw): pass
+            def emit(self, *a, **kw): pass
+        heartbeat_resolved = _Sig()
+
+    bridge = _Bridge()
+
+    on_buzz_callback = None
+    on_answer_callback = None
+    on_player_connected_callback = None
+    on_player_disconnected_callback = None
+    on_state_change_callback = None
+    on_player_unresponsive_callback = None
+
+    def connect(self): return True
+    def disconnect(self): pass
+    def unlock_buzzers(self): pass
+    def lock_player(self, player_id): pass
+    def start_question(self, question_id, max_attempts=1): pass
+    def end_question(self): pass
+    def mark_answer_wrong(self, player_id): pass
+    def mark_answer_correct(self, player_id): pass
+    def send_heartbeat(self, player_id): pass
+    def send_heartbeat_to_all(self, timeout_seconds=10): pass
+    def get_connected_players(self, timeout_seconds=60): return []
+    def check_all_players_liveliness(self): return {1: False, 2: False, 3: False, 4: False}
+    def check_player_liveliness(self, player_id): return False
+    def all_pings_resolved(self, timeout_seconds=10): return True
+    def get_status(self): return {"connected": False, "state": "demo"}
 
 
 def main():
-    """Main entry point - MQTT Hardware Only"""
-    cfg_app = get_config()
-    pack_dir = cfg_app.packs_dir / cfg_app.default_pack_name
-
     app = QApplication(sys.argv)
     app.setApplicationName("Football Trivia Game")
     app.setOrganizationName("Football Trivia Game")
 
-    # =========================================================================
-    # LOAD QUESTION PACK
-    # =========================================================================
+    # ── Icon loading ──────────────────────────────────────────────────────────
+    # .ico for Windows, .png for Linux / Raspberry Pi
+    icon = QIcon()
+    icon_candidates = [
+        "assets/icon.ico",   # Windows packaged
+        "icon.ico",          # Windows flat layout
+        "assets/icon.png",   # Linux / Raspberry Pi packaged
+        "icon.png",          # Linux / Raspberry Pi flat layout
+    ]
+    for try_path in icon_candidates:
+        full_path = resource_path(try_path)
+        if os.path.exists(full_path):
+            icon = QIcon(full_path)
+            if not icon.isNull():
+                app.setWindowIcon(icon)
+                print(f"[OK] Icon loaded: {full_path}")
+                break
+    else:
+        print(f"[WARNING] No icon found — tried: {', '.join(icon_candidates)}")
+
+    # ── Desktop shortcut (Pi / Linux only, packaged builds only) ─────────────
+    create_desktop_shortcut()
+
+    # FIX #6: --no-mqtt flag (or NO_MQTT=1 env var) enables demo/offline mode
+    no_mqtt = "--no-mqtt" in sys.argv or os.environ.get("NO_MQTT", "0") == "1"
+
+    # ── ENGINE ────────────────────────────────────────────────────────────────
     try:
-        cfg, questions = load_pack(pack_dir)
-        print("[OK] Loaded pack: {} ({} questions)".format(cfg.name, len(questions)))
-    except PackError as e:
-        print("[WARNING] Could not load pack: {}".format(e))
-        print("[INFO] Creating demo pack...")
-        
-        demo_dir = cfg_app.packs_dir / "demo_pack"
-        try:
-            cfg, questions = create_demo_pack(demo_dir)
-            print("[OK] Demo pack created with {} questions".format(len(questions)))
-        except Exception as ex:
-            print("[ERROR] Failed to create demo pack: {}".format(ex))
-            
-            # Emergency fallback
-            from app.core.models import GameConfig, Question, Media
-            from app.constants import MediaType
-            
-            cfg = GameConfig(
-                name="Emergency Demo Pack",
-                version=1,
-                rounds=1,
-                questions_per_round=3,
-                timer_seconds=20,
-                answer_seconds=8,
-                shuffle_questions=False,
-                question_files=[],
-                pack_dir=Path.cwd(),
-            )
-            
-            questions = [
-                Question(
-                    id="demo1",
-                    round=1,
-                    text="Who won the 2014 FIFA World Cup?",
-                    options=["Germany", "Argentina", "Brazil", "France"],
-                    correct_index=0,
-                    media=Media(type=MediaType.NONE, path=None),
-                ),
-                Question(
-                    id="demo2",
-                    round=1,
-                    text="Which player is known as 'CR7'?",
-                    options=["Messi", "Ronaldo", "Neymar", "Mbappe"],
-                    correct_index=1,
-                    media=Media(type=MediaType.NONE, path=None),
-                ),
-                Question(
-                    id="demo3",
-                    round=1,
-                    text="How many players per team in football?",
-                    options=["9", "10", "11", "12"],
-                    correct_index=2,
-                    media=Media(type=MediaType.NONE, path=None),
-                ),
-            ]
-        
-        QMessageBox.information(
-            None,
-            "Demo Mode",
-            "Could not load pack from:\n{}\n\n"
-            "Reason:\n{}\n\n"
-            "Starting with DEMO questions.\n"
-            "Open Admin Dashboard (info button) to create your pack!".format(pack_dir, e),
+        engine = GameEngine(_make_empty_config(), questions=[])
+    except Exception as e:
+        QMessageBox.critical(None, "Initialisation Error",
+                             f"Failed to initialise game engine:\n{e}")
+        sys.exit(1)
+
+    print("[OK] Engine initialised with 0 questions — load via Admin Dashboard")
+
+    # ── MQTT BACKEND ──────────────────────────────────────────────────────────
+    MQTT_BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "192.168.10.10")
+    MQTT_BROKER_PORT = int(os.environ.get("MQTT_BROKER_PORT", "1883"))
+
+    if no_mqtt:
+        print("[OK] --no-mqtt flag set — running in demo/offline mode (no hardware)")
+        mqtt_backend = _NoOpMQTTBackend()
+    else:
+        mqtt_backend = MQTTBuzzerBackend(
+            broker_host=MQTT_BROKER_HOST,
+            broker_port=MQTT_BROKER_PORT,
         )
 
-    # =========================================================================
-    # INITIALIZE GAME ENGINE
-    # =========================================================================
-    try:
-        engine = GameEngine(cfg, questions)
-        print("[OK] Game engine initialized")
-    except Exception as e:
-        print("[ERROR] Failed to initialize game engine: {}".format(e))
-        QMessageBox.critical(
-            None,
-            "Initialization Error",
-            "Failed to initialize game engine:\n{}".format(e)
-        )
-        sys.exit(1)
-    
-    # =========================================================================
-    # MQTT HARDWARE BACKEND - WAIT FOR BUZZER CONNECTIONS
-    # =========================================================================
-    print("\n" + "="*60)
-    print("MQTT HARDWARE BACKEND INITIALIZATION")
-    print("="*60)
-    
-    # Get broker configuration (you can make this configurable)
-    MQTT_BROKER_HOST = "192.168.10.10"  # Change to your broker IP
-    MQTT_BROKER_PORT = 1883
-    
-    print(f"Broker: {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
-    print("Waiting for ESP32 buzzers to connect...")
-    print("="*60 + "\n")
-    
-    # Create MQTT backend
-    mqtt_backend = MQTTBuzzerBackend(
-        broker_host=MQTT_BROKER_HOST,
-        broker_port=MQTT_BROKER_PORT
-    )
-    
-    # Try to connect to broker
-    if not mqtt_backend.connect():
-        QMessageBox.critical(
-            None,
-            "MQTT Connection Failed",
-            f"Failed to connect to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}\n\n"
-            "Please ensure:\n"
-            "• MQTT broker is running\n"
-            "• Network connection is active\n"
-            "• Broker address is correct\n\n"
-            "The application will now exit."
-        )
-        sys.exit(1)
-    
-    print("[OK] Connected to MQTT broker")
-    
-    # =========================================================================
-    # CREATE APPLICATION WINDOW
-    # =========================================================================
+        if not mqtt_backend.connect():
+            reply = QMessageBox.critical(
+                None,
+                "MQTT Connection Failed",
+                f"Failed to connect to broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}\n\n"
+                "Please ensure the MQTT broker is running and the network is active.\n\n"
+                "Run with --no-mqtt to start without hardware (demo mode).",
+                QMessageBox.Retry | QMessageBox.Ignore | QMessageBox.Abort,
+            )
+
+            if reply == QMessageBox.Abort:
+                sys.exit(1)
+            elif reply == QMessageBox.Ignore:
+                print("[WARNING] Continuing without MQTT connection — hardware will not work")
+            else:
+                if not mqtt_backend.connect():
+                    print("[WARNING] MQTT retry failed — switching to demo mode")
+                    mqtt_backend = _NoOpMQTTBackend()
+
+    print("[OK] MQTT backend ready")
+
+    # ── APPLICATION WINDOW ────────────────────────────────────────────────────
     try:
         from app.ui.app_window import AppWindow
         window = AppWindow(engine, mqtt_backend)
-        window.show()
-        print("[OK] Application window created and shown")
+
+        if not icon.isNull():
+            window.setWindowIcon(icon)
+
+        # Start maximized. Swap for showFullScreen() for kiosk/no-title-bar mode.
+        window.showMaximized()
+
     except Exception as e:
-        print("[ERROR] Failed to create window: {}".format(e))
-        QMessageBox.critical(
-            None,
-            "Window Error",
-            "Failed to create application window:\n{}".format(e)
-        )
+        QMessageBox.critical(None, "Window Error",
+                             f"Failed to create application window:\n{e}")
         mqtt_backend.disconnect()
         sys.exit(1)
 
-    # =========================================================================
-    # DISPLAY STARTUP STATUS
-    # =========================================================================
-    print("\n" + "="*60)
-    print("APPLICATION READY")
-    print("="*60)
-    print("Waiting for ESP32 buzzers to connect...")
-    print("Connect up to 4 buzzers (Player 1-4)")
-    print("Each buzzer will light up with its color when connected")
-    print("="*60 + "\n")
+    try:
+        dashboard = window.admin_dashboard
+        print("[OK] AdminDashboard wired ✓")
+    except AttributeError as exc:
+        print(f"[WARNING] Could not wire AdminDashboard: {exc}")
 
-    # Start Qt event loop
-    print("[INFO] Starting application event loop...")
+    # ── READY ─────────────────────────────────────────────────────────────────
+    mode_str = "DEMO (no hardware)" if isinstance(mqtt_backend, _NoOpMQTTBackend) else \
+               f"HARDWARE ({MQTT_BROKER_HOST}:{MQTT_BROKER_PORT})"
+    print("\n" + "=" * 55)
+    print(f"READY — {mode_str}")
+    print("Open Admin Dashboard → Load Excel → questions go live")
+    print("=" * 55 + "\n")
+
     exit_code = app.exec()
-    
-    # Cleanup on exit
-    print("[INFO] Shutting down...")
     mqtt_backend.disconnect()
-    
     sys.exit(exit_code)
 
 
@@ -189,7 +253,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        print("[FATAL ERROR] Unhandled exception: {}".format(e))
         import traceback
         traceback.print_exc()
         sys.exit(1)
