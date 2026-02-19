@@ -1,0 +1,26 @@
+{
+  "id": "q001",
+  "round": 1,
+  "text": "Who won the 2014 FIFA World Cup?",
+  "options": [
+    "Germany",
+    "Argentina",
+    "Brazil",
+    "France"
+  ],
+  "correct_index": 0,
+  "media": {
+    "type": "none",
+    "path": null
+  },
+  "difficulty": "easy",
+  "tags": [
+    "world_cup",
+    "2014"
+  ],
+  "points_first_attempt": 1,
+  "points_second_attempt": 2,
+  "points_third_attempt": 1,
+  "max_attempts": 3,
+  "enabled": true
+}
