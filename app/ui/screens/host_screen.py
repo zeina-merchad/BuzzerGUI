@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QMessageBox, QFrame, QGridLayout, QDialog
 )
-
+import sys,os
 from app.core.engine import GameEngine
 from app.core.state import Phase
 from app.hardware.mqtt_buzzer import MQTTBuzzerBackend
@@ -495,7 +495,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         #   )
         self.logo_label = QLabel("YOUR\nLOGO")
         self.logo_label.setPixmap(
-               QPixmap(r"app\\ui\\screens\\logo_full.png").scaled(
+               QPixmap(self.resource_path("app/ui/screens/logo_full.png")).scaled(
                 120, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         self.logo_label.setAlignment(Qt.AlignCenter)
         self.logo_label.setAlignment(Qt.AlignCenter)
@@ -689,6 +689,27 @@ class HostScreen(RemoteKeyHandler, QWidget):
         control_layout.addWidget(self.help_btn)
 
         return control_panel
+    
+
+
+    def resource_path(self, rel: str) -> str:
+        if getattr(sys, 'frozen', False):
+            base = os.path.dirname(sys.executable)
+            internal = os.path.join(base, "_internal")
+            path = os.path.join(internal, rel)
+            if os.path.exists(path):
+                return path
+            path = os.path.join(base, rel)
+            if os.path.exists(path):
+                return path
+            return os.path.join(internal, rel)
+        else:
+            # Go up 3 levels: screens -> ui -> app -> project root
+            root = os.path.dirname(os.path.abspath(__file__))
+            root = os.path.dirname(root)  # ui
+            root = os.path.dirname(root)  # app
+            root = os.path.dirname(root)  # project root
+            return os.path.join(root, rel)
 
     def _connect_engine_signals(self):
         self.engine.phase_changed.connect(self._on_phase)

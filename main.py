@@ -64,15 +64,15 @@ def create_desktop_shortcut() -> None:
             pass
 
     content = f"""[Desktop Entry]
-                Name=Football Quiz
-                Comment=Buzzer Quiz Game
-                Exec={exe_path}
-                Icon={icon_path}
-                Terminal=false
-                Type=Application
-                Categories=Game;
-                StartupNotify=true
-                """
+    Name=Football Quiz
+    Comment=Buzzer Quiz Game
+    Exec=env QT_QPA_PLATFORM=xcb {exe_path}
+    Icon={icon_path}
+    Terminal=false
+    Type=Application
+    Categories=Game;
+    StartupNotify=true
+    """
     try:
         with open(shortcut_path, "w") as f:
             f.write(content)
@@ -140,6 +140,24 @@ class _NoOpMQTTBackend:
 
 def main():
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+
+    from PySide6.QtGui import QPalette, QColor
+    dark_palette = QPalette()
+    dark_palette.setColor(QPalette.Window,          QColor(13, 27, 42))
+    dark_palette.setColor(QPalette.WindowText,      QColor(255, 255, 255))
+    dark_palette.setColor(QPalette.Base,            QColor(15, 25, 40))
+    dark_palette.setColor(QPalette.AlternateBase,   QColor(20, 30, 45))
+    dark_palette.setColor(QPalette.ToolTipBase,     QColor(255, 255, 255))
+    dark_palette.setColor(QPalette.ToolTipText,     QColor(255, 255, 255))
+    dark_palette.setColor(QPalette.Text,            QColor(255, 255, 255))
+    dark_palette.setColor(QPalette.Button,          QColor(20, 30, 45))
+    dark_palette.setColor(QPalette.ButtonText,      QColor(255, 255, 255))
+    dark_palette.setColor(QPalette.BrightText,      QColor(57, 255, 20))
+    dark_palette.setColor(QPalette.Highlight,       QColor(57, 255, 20))
+    dark_palette.setColor(QPalette.HighlightedText, QColor(0, 0, 0))
+    app.setPalette(dark_palette)
+
     app.setApplicationName("Football Trivia Game")
     app.setOrganizationName("Football Trivia Game")
 
@@ -147,10 +165,8 @@ def main():
     # .ico for Windows, .png for Linux / Raspberry Pi
     icon = QIcon()
     icon_candidates = [
-        "assets/icon.ico",   # Windows packaged
-        "icon.ico",          # Windows flat layout
-        "assets/icon.png",   # Linux / Raspberry Pi packaged
-        "icon.png",          # Linux / Raspberry Pi flat layout
+        "assets/logo.png",   # Linux / Raspberry Pi packaged
+        "logo.png",          # Linux / Raspberry Pi flat layout
     ]
     for try_path in icon_candidates:
         full_path = resource_path(try_path)
