@@ -112,7 +112,7 @@ class MQTTBuzzerBackend:
         self.connected_players: Dict[int, float] = {}
 
         # Heartbeat / ping
-        self.heartbeat_timeout = 15.0
+        self.heartbeat_timeout = 5.0
         self.last_heartbeat_sent: Dict[int, float] = {}
         self.last_heartbeat_received: Dict[int, float] = {}
         self.awaiting_pong: Dict[int, bool] = {}
@@ -395,16 +395,17 @@ class MQTTBuzzerBackend:
         connected = self.get_connected_players(timeout_seconds=timeout_seconds)
         targets = self._expected_player_ids()
 
-        if not connected and not targets:
+        if not targets:
             print("[MQTT] send_heartbeat_to_all: no players to ping")
-            # Emit immediately with all dead so HostScreen is not stuck waiting
-            alive_map = {pid: False for pid in [1, 2, 3, 4]}
-            self.bridge.heartbeat_resolved.emit(alive_map)
+            self.bridge.heartbeat_resolved.emit({})
             return
 
         # FIX C: advance the generation counter for this round
         self._heartbeat_generation += 1
         my_generation = self._heartbeat_generation
+
+        # Clear stale pong state from previous rounds before pinging
+        self.awaiting_pong.clear()
 
         for player_id in targets:
             self.send_heartbeat(player_id)
@@ -483,11 +484,7 @@ class MQTTBuzzerBackend:
             print(f"[MQTT] Buzz ignored (eliminated) P{player_id}")
             return
 
-        if self.attempt_count >= self.max_attempts:
-            print(f"[MQTT] Buzz ignored (attempts exhausted {self.attempt_count}/{self.max_attempts})")
-            return
-
-        # Accept
+        # Accept (attempt counting is authoritative in the engine, not here)
         self.attempt_count += 1
         self.locked_player = player_id
         self._set_state(BuzzerState.LOCKED)
@@ -595,11 +592,15 @@ class MQTTBuzzerBackend:
     # =====================================================================
 
     def _expected_player_ids(self) -> List[int]:
-        """Return the player IDs we consider expected for heartbeat purposes."""
-        connected = self.get_connected_players(timeout_seconds=self.heartbeat_timeout * 2)
+        """Return the player IDs we consider expected for heartbeat purposes.
+        Only includes players seen recently — avoids waiting for phantom players.
+        """
+        # Use a generous window so recently-connected players are included
+        connected = self.get_connected_players(timeout_seconds=60)
         if connected:
             return sorted(set(connected))
-        return [1, 2, 3, 4]
+        # Truly no players seen yet — emit resolved immediately with empty map
+        return []
 
     # =====================================================================
     # STATUS

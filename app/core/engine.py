@@ -588,6 +588,8 @@ class GameEngine(QObject):
                 self.locked_buzzer_id = None
                 self.lock_changed.emit(None)
 
+                # Reset question timer for next player's attempt
+                self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
                 self.timer.stop()
 
                 self.phase = Phase.SHOW_QUESTION
@@ -756,5 +758,3 @@ class GameEngine(QObject):
                         return
 
                 self._on_all_attempts_exhausted()
-
-    

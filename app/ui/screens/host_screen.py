@@ -159,20 +159,20 @@ class CornerPlayerCard(QFrame):
         }
         self.color = self.team_colors.get(player_id, "#888888")
 
-        self.setFixedSize(150, 180)
+        self.setFixedSize(280, 320)
         self.setStyleSheet("QFrame { background: transparent; border: none; }")
 
         self.icon = QLabel()
         self.icon.setAlignment(Qt.AlignCenter)
-        self.icon.setFixedSize(100, 100)
+        self.icon.setFixedSize(200, 200)
         self._set_disconnected_icon()
 
         self.label = QLabel(f"P{player_id}: WAITING")
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setStyleSheet(
-            "font-size: 14px; font-weight: 900; color: white; "
+            "font-size: 22px; font-weight: 900; color: white; "
             "background: rgba(100, 100, 100, 0.7); "
-            "padding: 8px 12px; border-radius: 8px;"
+            "padding: 12px 18px; border-radius: 10px;"
         )
 
         lay = QVBoxLayout(self)
@@ -182,58 +182,61 @@ class CornerPlayerCard(QFrame):
         lay.addWidget(self.icon, alignment=Qt.AlignCenter)
         lay.addWidget(self.label)
 
-    def _set_disconnected_icon(self):
-        self.icon.setStyleSheet(
-            "QLabel { "
-            "background: rgba(85, 85, 85, 0.2); "
-            "border: 4px solid #555555; "
-            "border-radius: 50px; "
-            "color: #999999; "
-            "font-size: 36px; "
-            "font-weight: 900; "
-            "}"
-        )
-        self.icon.setText(str(self._score))
-
-    def _set_connected_icon(self):
-        self.icon.setStyleSheet(
+    def _icon_style(self, bg: str, border: str, color: str, font: int) -> str:
+        return (
             f"QLabel {{ "
-            f"background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-            f"stop:0 {self.color}40, stop:1 {self.color}20); "
-            f"border: 4px solid {self.color}; "
-            f"border-radius: 50px; "
-            f"color: white; "
-            f"font-size: 36px; "
+            f"background: {bg}; "
+            f"border: {border}; "
+            f"border-radius: 100px; "
+            f"color: {color}; "
+            f"font-size: {font}px; "
             f"font-weight: 900; "
             f"}}"
         )
+
+    def _label_style(self, bg: str) -> str:
+        return (
+            f"font-size: 22px; font-weight: 900; color: white; "
+            f"background: {bg}; "
+            f"padding: 12px 18px; border-radius: 10px;"
+        )
+
+    def _set_disconnected_icon(self):
+        self.icon.setStyleSheet(self._icon_style(
+            bg="rgba(85, 85, 85, 0.6)",
+            border="none",
+            color="#cccccc",
+            font=70,
+        ))
+        self.icon.setText(str(self._score))
+
+    def _set_connected_icon(self):
+        # Solid team color — matches the label bar underneath
+        self.icon.setStyleSheet(self._icon_style(
+            bg=self.color,
+            border="none",
+            color="white",
+            font=70,
+        ))
         self.icon.setText(str(self._score))
 
     def _set_buzzed_icon(self):
-        self.icon.setStyleSheet(
-            "QLabel { "
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-            "stop:0 rgba(93, 219, 255, 0.4), stop:1 rgba(93, 219, 255, 0.2)); "
-            "border: 5px solid #5ddbff; "
-            "border-radius: 50px; "
-            "color: white; "
-            "font-size: 52px; "
-            "font-weight: 900; "
-            "}"
-        )
-        self.icon.setText("✋")
+        # Full solid team color, brighter — same color as label
+        self.icon.setStyleSheet(self._icon_style(
+            bg=self.color,
+            border="none",
+            color="white",
+            font=70,
+        ))
+        self.icon.setText(str(self._score))
 
     def _set_eliminated_icon(self):
-        self.icon.setStyleSheet(
-            "QLabel { "
-            "background: rgba(231, 76, 60, 0.3); "
-            "border: 5px solid #e74c3c; "
-            "border-radius: 50px; "
-            "color: #e74c3c; "
-            "font-size: 36px; "
-            "font-weight: 900; "
-            "}"
-        )
+        self.icon.setStyleSheet(self._icon_style(
+            bg="rgba(231, 76, 60, 0.4)",
+            border="none",
+            color="#e74c3c",
+            font=70,
+        ))
         self.icon.setText(str(self._score))
 
     def set_connected(self, is_connected: bool):
@@ -242,85 +245,47 @@ class CornerPlayerCard(QFrame):
             if not self.is_buzzed and not self.is_eliminated:
                 self._set_connected_icon()
             self.label.setText(f"P{self.player_id}: READY")
-            self.label.setStyleSheet(
-                "font-size: 14px; font-weight: 900; color: white; "
-                f"background: {self.color}; "
-                "padding: 8px 12px; border-radius: 8px;"
-            )
+            self.label.setStyleSheet(self._label_style(self.color))
         else:
             if not self.is_buzzed and not self.is_eliminated:
                 self._set_disconnected_icon()
             self.label.setText(f"P{self.player_id}: WAITING")
-            self.label.setStyleSheet(
-                "font-size: 14px; font-weight: 900; color: white; "
-                "background: rgba(100, 100, 100, 0.7); "
-                "padding: 8px 12px; border-radius: 8px;"
-            )
+            self.label.setStyleSheet(self._label_style("rgba(100, 100, 100, 0.7)"))
 
     def set_eliminated(self, is_eliminated: bool):
         self.is_eliminated = is_eliminated
         if is_eliminated:
             self._set_eliminated_icon()
             self.label.setText(f"P{self.player_id}: ELIMINATED")
-            self.label.setStyleSheet(
-                "font-size: 13px; font-weight: 900; color: white; "
-                "background: rgba(231, 76, 60, 0.8); "
-                "padding: 8px 12px; border-radius: 8px;"
-            )
+            self.label.setStyleSheet(self._label_style("rgba(231, 76, 60, 0.8)"))
         else:
             if self.is_hardware_connected:
                 self._set_connected_icon()
                 self.label.setText(f"P{self.player_id}: {self._score}pts")
-                self.label.setStyleSheet(
-                    "font-size: 14px; font-weight: 900; color: white; "
-                    f"background: {self.color}; "
-                    "padding: 8px 12px; border-radius: 8px;"
-                )
+                self.label.setStyleSheet(self._label_style(self.color))
             else:
                 self._set_disconnected_icon()
                 self.label.setText(f"P{self.player_id}: WAITING")
-                self.label.setStyleSheet(
-                    "font-size: 14px; font-weight: 900; color: white; "
-                    "background: rgba(100, 100, 100, 0.7); "
-                    "padding: 8px 12px; border-radius: 8px;"
-                )
+                self.label.setStyleSheet(self._label_style("rgba(100, 100, 100, 0.7)"))
 
     def set_score(self, value: int):
-        """Update score display."""
         self._score = int(value)
-
         if self.is_eliminated:
             self._set_eliminated_icon()
             self.label.setText(f"P{self.player_id}: ELIMINATED ({self._score}pts)")
-            self.label.setStyleSheet(
-                "font-size: 13px; font-weight: 900; color: white; "
-                "background: rgba(231, 76, 60, 0.8); "
-                "padding: 8px 12px; border-radius: 8px;"
-            )
+            self.label.setStyleSheet(self._label_style("rgba(231, 76, 60, 0.8)"))
         elif self.is_buzzed:
             self._set_buzzed_icon()
             self.label.setText(f"P{self.player_id}: BUZZED! ({self._score}pts)")
-            self.label.setStyleSheet(
-                "font-size: 13px; font-weight: 900; color: white; "
-                "background: rgba(93, 219, 255, 0.8); "
-                "padding: 8px 12px; border-radius: 8px;"
-            )
+            self.label.setStyleSheet(self._label_style(self.color))
         elif self.is_hardware_connected:
             self._set_connected_icon()
             self.label.setText(f"P{self.player_id}: {self._score}pts")
-            self.label.setStyleSheet(
-                "font-size: 14px; font-weight: 900; color: white; "
-                f"background: {self.color}; "
-                "padding: 8px 12px; border-radius: 8px;"
-            )
+            self.label.setStyleSheet(self._label_style(self.color))
         else:
             self._set_disconnected_icon()
             self.label.setText(f"P{self.player_id}: WAITING ({self._score}pts)")
-            self.label.setStyleSheet(
-                "font-size: 14px; font-weight: 900; color: white; "
-                "background: rgba(100, 100, 100, 0.7); "
-                "padding: 8px 12px; border-radius: 8px;"
-            )
+            self.label.setStyleSheet(self._label_style("rgba(100, 100, 100, 0.7)"))
 
     def highlight_locked(self, locked: bool):
         if self.is_eliminated:
@@ -399,6 +364,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         self.player_cards = {}
 
+        # Create logo early so _build_player_columns can place it
+        self._create_logo_label()
+
         left_column, right_column = self._build_player_columns()
         game_grid.addWidget(left_column, 0, 0, 3, 1)
         game_grid.addWidget(right_column, 0, 2, 3, 1)
@@ -416,6 +384,15 @@ class HostScreen(RemoteKeyHandler, QWidget):
         # Flash overlay (on top of everything)
         self.correct_flash = FlashOverlay(self)
         self.correct_flash.hide()
+
+    def _create_logo_label(self):
+        self.logo_label = QLabel()
+        self.logo_label.setPixmap(
+               QPixmap(self.resource_path("app/ui/screens/logo_full.png")).scaled(
+                260, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.logo_label.setAlignment(Qt.AlignCenter)
+        self.logo_label.setFixedSize(260, 260)
+        self.logo_label.setStyleSheet("QLabel { background: transparent; border: none; }")
 
     def _build_player_columns(self):
         """Build left (P1, cascading, P3) and right (P2, P4) columns."""
@@ -445,6 +422,8 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         self.player_cards[2] = CornerPlayerCard(2)
         right_layout.addWidget(self.player_cards[2], alignment=Qt.AlignTop | Qt.AlignCenter)
+        right_layout.addStretch(1)
+        right_layout.addWidget(self.logo_label, alignment=Qt.AlignCenter)
         right_layout.addStretch(1)
 
         self.player_cards[4] = CornerPlayerCard(4)
@@ -484,32 +463,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         timer_row_layout.addWidget(self.round_badge, alignment=Qt.AlignVCenter)
         timer_row_layout.addStretch()
 
-        # ── Company logo placeholder ─────────────────────────────────────────
-        # To use a real logo: replace QLabel with a QLabel that loads a QPixmap,
-        # e.g.:
-        #   from PySide6.QtGui import QPixmap
-        #   self.logo_label.setPixmap(
-        #       QPixmap("path/to/logo.png").scaled(
-        #           120, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation
-        #       )
-        #   )
-        self.logo_label = QLabel("YOUR\nLOGO")
-        self.logo_label.setPixmap(
-               QPixmap(self.resource_path("app/ui/screens/logo_full.png")).scaled(
-                120, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        self.logo_label.setAlignment(Qt.AlignCenter)
-        self.logo_label.setAlignment(Qt.AlignCenter)
-        self.logo_label.setFixedSize(120, 60)
-        self.logo_label.setStyleSheet(
-            "QLabel { "
-            "color: rgba(255, 255, 255, 0.25); "
-            "font-size: 13px; font-weight: 900; letter-spacing: 2px; "
-            "background: rgba(255, 255, 255, 0.05); "
-            "border: 2px dashed rgba(255, 255, 255, 0.15); "
-            "border-radius: 8px; "
-            "}"
-        )
-        timer_row_layout.addWidget(self.logo_label, alignment=Qt.AlignVCenter)
 
         center_layout.addWidget(timer_row, alignment=Qt.AlignCenter)
 
@@ -1067,6 +1020,10 @@ class HostScreen(RemoteKeyHandler, QWidget):
         if self.mqtt_backend:
             self.mqtt_backend.mark_answer_wrong(player_id)
 
+        # Button press path already handled sfx + unlock in _auto_judge_answer
+        if getattr(self, '_answer_judged_by_button', False):
+            return
+
         self.sfx.play_wrong()
 
         try:
@@ -1080,23 +1037,24 @@ class HostScreen(RemoteKeyHandler, QWidget):
             can_continue = False
 
         if can_continue:
-            self.status_label.setText(f"⏰ Player {player_id} TIMEOUT / WRONG! Unlock for next attempt.")
+            self.status_label.setText(f"⏰ Player {player_id} TIMEOUT! Buzzers re-opened...")
             self.status_label.setStyleSheet(
-                "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
+                "font-size: 22px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
                 "background: rgba(231, 76, 60, 0.2); "
-                "padding: 12px 20px; border: 2px solid #e74c3c; "
-                "border-radius: 8px;"
+                "padding: 18px 28px; border: 3px solid #e74c3c; "
+                "border-radius: 10px;"
             )
             self.buzzers_unlocked = False
             self.btn_unlock.setEnabled(True)
             self.btn_unlock.setText("🔓 UNLOCK NEXT ATTEMPT")
+            self._unlock_buzzers()  # auto-unlock for timeout path
         else:
             self.status_label.setText("⏰ No attempts left! Click NEXT to continue.")
             self.status_label.setStyleSheet(
-                "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
+                "font-size: 22px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
                 "background: rgba(231, 76, 60, 0.2); "
-                "padding: 12px 20px; border: 2px solid #e74c3c; "
-                "border-radius: 8px;"
+                "padding: 18px 28px; border: 3px solid #e74c3c; "
+                "border-radius: 10px;"
             )
             self.btn_next.setEnabled(True)
             self.btn_next.setText("▶️ NEXT QUESTION")
@@ -1314,12 +1272,15 @@ class HostScreen(RemoteKeyHandler, QWidget):
         print(f"   Correct:  {question.correct_index} ({question.options[question.correct_index]})")
         print(f"   Result:   {'✅ CORRECT' if is_correct else '❌ WRONG'}")
 
+        self._answer_judged_by_button = True
         self.engine.apply_answer(is_correct, player_id)
+        self._answer_judged_by_button = False
 
         if is_correct:
             self.sfx.play_correct()
             self.sfx.play_point()
             self.correct_flash.flash_green("✅ CORRECT!")
+            self.options.mark_option_correct(answer)
 
             self.status_label.setText(f"✅ Player {player_id} CORRECT! Click NEXT to continue.")
             self.status_label.setStyleSheet(
@@ -1359,6 +1320,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.buzzers_unlocked = False
             self.btn_unlock.setEnabled(True)
             self.btn_unlock.setText("🔓 UNLOCK NEXT ATTEMPT")
+            self._unlock_buzzers()  # auto-unlock for next attempt
             self.btn_unlock.setStyleSheet(
                 "QPushButton { "
                 "background: rgba(255, 193, 7, 0.2); "
