@@ -293,9 +293,8 @@ class CornerPlayerCard(QFrame):
         self.is_buzzed = locked
         if locked:
             self._set_buzzed_icon()
-        elif self.is_hardware_connected:
-            self._set_connected_icon()
         else:
+            # Always back to grey after buzz resolves — color only on buzz
             self._set_disconnected_icon()
         self.set_score(self._score)
 
@@ -404,7 +403,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
 
         self.player_cards[1] = CornerPlayerCard(1)
-        left_layout.addWidget(self.player_cards[1], alignment=Qt.AlignTop | Qt.AlignCenter)
+        left_layout.addWidget(self.player_cards[1], alignment=Qt.AlignCenter)
         left_layout.addStretch(1)
 
         self.cascading_widget = CascadingAttemptsWidget()
@@ -412,7 +411,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         left_layout.addStretch(1)
 
         self.player_cards[3] = CornerPlayerCard(3)
-        left_layout.addWidget(self.player_cards[3], alignment=Qt.AlignBottom | Qt.AlignCenter)
+        left_layout.addWidget(self.player_cards[3], alignment=Qt.AlignCenter)
 
         # Right column
         right_column = QWidget()
@@ -422,13 +421,13 @@ class HostScreen(RemoteKeyHandler, QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         self.player_cards[2] = CornerPlayerCard(2)
-        right_layout.addWidget(self.player_cards[2], alignment=Qt.AlignTop | Qt.AlignCenter)
+        right_layout.addWidget(self.player_cards[2], alignment=Qt.AlignCenter)
         right_layout.addStretch(1)
         right_layout.addWidget(self.logo_label, alignment=Qt.AlignCenter)
         right_layout.addStretch(1)
 
         self.player_cards[4] = CornerPlayerCard(4)
-        right_layout.addWidget(self.player_cards[4], alignment=Qt.AlignBottom | Qt.AlignCenter)
+        right_layout.addWidget(self.player_cards[4], alignment=Qt.AlignCenter)
 
         return left_column, right_column
 
@@ -668,7 +667,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
     def _connect_engine_signals(self):
         self.engine.phase_changed.connect(self._on_phase)
         self.engine.question_changed.connect(self._render_question)
-        self.engine.timer_changed.connect(self.timer.set_remaining_ms)
+        self.engine.timer_changed.connect(self._on_timer_changed_ui)
         self.engine.timer_changed.connect(self._sfx_on_timer_changed)
         self.engine.lock_changed.connect(self._on_lock)
         self.engine.scores_changed.connect(self._render_scores)
@@ -677,6 +676,25 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         if hasattr(self.engine, 'question_advanced'):
             self.engine.question_advanced.connect(self._on_engine_question_advanced)
+
+    def _grey_out_all_cards(self):
+        """Set all player cards to disconnected/grey state between questions."""
+        for card in self.player_cards.values():
+            card.is_hardware_connected = False
+            card.is_buzzed = False
+            card.is_eliminated = False
+            card._set_disconnected_icon()
+            card.label.setText(f"P{card.player_id}: WAITING")
+            card.label.setStyleSheet(card._label_style("rgba(100, 100, 100, 0.7)"))
+
+    def _on_timer_changed_ui(self, remaining_ms: int):
+        """Only update the timer widget when question timer is running.
+        Ignore ticks from the answer timer (Phase.BUZZED) so the widget
+        does not jump to 8s and count down while a player is answering.
+        """
+        if self.engine.phase == Phase.BUZZED:
+            return
+        self.timer.set_remaining_ms(remaining_ms)
 
     def _connect_mqtt_callbacks(self):
         if not self.mqtt_backend:
@@ -798,6 +816,14 @@ class HostScreen(RemoteKeyHandler, QWidget):
             return
 
         self.buzzers_unlocked = True
+
+        # Mark connected players as ready — keep grey circle, update label only
+        connected = self.mqtt_backend.get_connected_players(timeout_seconds=60) if self.mqtt_backend else []
+        for pid, card in self.player_cards.items():
+            if pid in connected:
+                card.is_hardware_connected = True
+                card.label.setText(f"P{pid}: READY")
+                card.label.setStyleSheet(card._label_style(card.color))
 
         self.btn_unlock.setText("✅ BUZZERS ACTIVE")
         self.btn_unlock.setStyleSheet(
@@ -1105,22 +1131,25 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self._auto_judge_answer(player_id, answer)
 
     def _on_player_connected(self, player_id: int):
-        if player_id in self.player_cards:
-            self.player_cards[player_id].set_connected(True)
-        # FIX: register with engine so cascading attempts use real player set
+        # Never touch card UI on connect — cards stay grey until player buzzes
         self.engine.register_active_player(player_id)
+        # Track internally so unlock knows who is connected
+        if player_id in self.player_cards:
+            self.player_cards[player_id].is_hardware_connected = True
 
     def _on_player_disconnected(self, player_id: int):
-        if player_id in self.player_cards:
-            self.player_cards[player_id].set_connected(False)
+        # Don't update card UI on disconnect — passive timeout detection
+        # causes false flicker during ping-pong cycles.
+        # Cards reset naturally on game reset / new question.
+        self.engine.unregister_active_player(player_id)
+        print(f"[UI] Player {player_id} disconnected (card UI unchanged)")
 
     def _update_connection_status(self):
-        """Passive connection poll — runs every 2s."""
-        if not self.mqtt_backend:
-            return
-        connected_players = self.mqtt_backend.get_connected_players(timeout_seconds=10)
-        for pid, card in self.player_cards.items():
-            card.set_connected(pid in connected_players)
+        """Passive connection poll — runs every 2s.
+        Only updates engine knowledge, never touches player card UI.
+        Card visuals only change on real connect/disconnect MQTT events.
+        """
+        pass  # UI updates removed — prevents flicker during ping-pong
 
     # =========================================================================
     # QUESTION SETUP
@@ -1130,6 +1159,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         """Reset per-question UI + reset MQTT backend question state."""
         self._warned_7 = False
         self._warned_3 = False
+        self._grey_out_all_cards()  # grey between questions
         # FIX #2: mark that any prior heartbeat round is done before starting new one
         self._heartbeat_in_progress = False
 
@@ -1172,13 +1202,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         if self.mqtt_backend:
             q = self.engine.current_question()
             self.mqtt_backend.start_question(question_id=q.id, max_attempts=q.max_attempts)
-
-            # FIX #2: only start a new heartbeat round if one isn't already running.
-            if not self._heartbeat_in_progress:
-                self._heartbeat_in_progress = True
-                self.status_label.setText("📡 Pinging connected buzzers...")
-                self.mqtt_backend.send_heartbeat_to_all(timeout_seconds=10)
-                # _apply_heartbeat_results will be called via bridge.heartbeat_resolved signal
+            # No heartbeat here — unlock button is always available immediately
 
         self._render_question()
         self._render_scores()
@@ -1232,24 +1256,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
             return
 
         # ── Context: normal question screen ───────────────────────────────────
-        if len(alive_players) == 0:
-            self.status_label.setText("🚫 No buzzers responding. Check power/WiFi.")
-            self.status_label.setStyleSheet(
-                "font-size: 14px; font-weight: 900; color: #ff4c4c; "
-                "background: rgba(255, 0, 0, 0.2); "
-                "padding: 12px 20px; border: 2px solid #ff4c4c; "
-                "border-radius: 8px;"
-            )
-            self.btn_unlock.setEnabled(False)
-        else:
-            self.status_label.setText(f"✅ Alive buzzers: {sorted(alive_players)} — Click UNLOCK when ready")
-            self.status_label.setStyleSheet(
-                "font-size: 14px; font-weight: 700; color: rgba(255, 193, 7, 1.0); "
-                "background: rgba(255, 193, 7, 0.2); "
-                "padding: 12px 20px; border: 2px solid #ffc107; "
-                "border-radius: 8px;"
-            )
-            self.btn_unlock.setEnabled(True)
+        # Heartbeat only updates engine player set — never touches unlock button
 
     # =========================================================================
     # AUTO JUDGING

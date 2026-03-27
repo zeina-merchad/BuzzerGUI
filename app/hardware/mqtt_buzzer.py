@@ -292,9 +292,9 @@ class MQTTBuzzerBackend:
             self.bridge.player_connected.emit(player_id)
 
     def _passive_disconnect_check(self) -> None:
-        """Emit player_disconnected for players whose last-seen timestamp has
-        exceeded heartbeat_timeout.  Called on the MQTT thread but rate-limited
-        to once per _CONN_CHECK_INTERVAL_S to avoid hammering the signal.
+        """Passive disconnect detection — only logs, never emits UI signals.
+        Emitting player_disconnected caused connected→disconnected→connected
+        flicker on every heartbeat cycle.
         """
         now = time.time()
         if now - self._last_conn_check < self._CONN_CHECK_INTERVAL_S:
@@ -306,7 +306,7 @@ class MQTTBuzzerBackend:
                 if pid not in self._known_disconnected:
                     self._known_disconnected.add(pid)
                     print(f"[MQTT] ✗ Player {pid} timed out (last seen {now - last_seen:.1f}s ago)")
-                    self.bridge.player_disconnected.emit(pid)
+                    # No signal emitted — prevents UI flicker
 
     def get_connected_players(self, timeout_seconds: int = 60) -> List[int]:
         """Return player IDs seen within timeout_seconds."""

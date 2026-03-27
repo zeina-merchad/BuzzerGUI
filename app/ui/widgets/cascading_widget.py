@@ -10,7 +10,7 @@ class CascadingAttemptsWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.setStyleSheet("QWidget { background: transparent; }")
-        self.setFixedWidth(380)
+        self.setMinimumWidth(520)
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -27,14 +27,14 @@ class CascadingAttemptsWidget(QWidget):
         )
 
         layout = QVBoxLayout(container)
-        layout.setSpacing(6)
-        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(12)
+        layout.setContentsMargins(24, 20, 24, 20)
 
         title = QLabel("ATTEMPT\nSTATUS")
         title.setAlignment(Qt.AlignCenter)
         title.setWordWrap(True)
         title.setStyleSheet(
-            "font-size: 18px; font-weight: 900; color: #39FF14; "
+            "font-size: 26px; font-weight: 900; color: #39FF14; "
             "letter-spacing: 1px; background: transparent; border: none;"
         )
         layout.addWidget(title)
@@ -43,8 +43,8 @@ class CascadingAttemptsWidget(QWidget):
         self.attempt_label.setAlignment(Qt.AlignCenter)
         self.attempt_label.setWordWrap(True)
         self.attempt_label.setStyleSheet(
-            "font-size: 42px; font-weight: 900; color: white; "
-            "background: transparent; border: none; padding: 4px;"
+            "font-size: 60px; font-weight: 900; color: white; "
+            "background: transparent; border: none; padding: 8px;"
         )
         layout.addWidget(self.attempt_label)
 
@@ -52,7 +52,7 @@ class CascadingAttemptsWidget(QWidget):
         self.points_label.setAlignment(Qt.AlignCenter)
         self.points_label.setWordWrap(True)
         self.points_label.setStyleSheet(
-            "font-size: 22px; font-weight: 700; color: #ffd700; "
+            "font-size: 32px; font-weight: 700; color: #ffd700; "
             "background: transparent; border: none;"
         )
         layout.addWidget(self.points_label)
@@ -61,7 +61,7 @@ class CascadingAttemptsWidget(QWidget):
         self.players_label.setAlignment(Qt.AlignCenter)
         self.players_label.setWordWrap(True)
         self.players_label.setStyleSheet(
-            "font-size: 16px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
+            "font-size: 24px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
             "background: transparent; border: none; padding-top: 4px;"
         )
         layout.addWidget(self.players_label)
@@ -70,15 +70,15 @@ class CascadingAttemptsWidget(QWidget):
         indicators_widget = QWidget()
         indicators_widget.setStyleSheet("QWidget { background: transparent; }")
         ind_layout = QHBoxLayout(indicators_widget)
-        ind_layout.setContentsMargins(0, 10, 0, 0)
-        ind_layout.setSpacing(14)
+        ind_layout.setContentsMargins(0, 14, 0, 0)
+        ind_layout.setSpacing(18)
         ind_layout.setAlignment(Qt.AlignCenter)
 
         self.player_indicators = {}
         for i in range(1, 5):
             ind = QLabel(f"P{i}")
             ind.setAlignment(Qt.AlignCenter)
-            ind.setFixedSize(58, 58)
+            ind.setFixedSize(80, 80)
             ind.setStyleSheet(self._idle_indicator_style())
             self.player_indicators[i] = ind
             ind_layout.addWidget(ind)
@@ -96,9 +96,9 @@ class CascadingAttemptsWidget(QWidget):
             "QLabel { "
             "background: rgba(255, 255, 255, 0.1); "
             "border: 3px solid rgba(255, 255, 255, 0.3); "
-            "border-radius: 29px; "
+            "border-radius: 40px; "
             "color: rgba(255, 255, 255, 0.5); "
-            "font-size: 16px; font-weight: 900; "
+            "font-size: 28px; font-weight: 900; "
             "}"
         )
 
@@ -107,9 +107,9 @@ class CascadingAttemptsWidget(QWidget):
             "QLabel { "
             "background: rgba(231, 76, 60, 0.3); "
             "border: 3px solid #e74c3c; "
-            "border-radius: 29px; "
+            "border-radius: 40px; "
             "color: #e74c3c; "
-            "font-size: 22px; font-weight: 900; "
+            "font-size: 28px; font-weight: 900; "
             "}"
         )
 
@@ -118,15 +118,15 @@ class CascadingAttemptsWidget(QWidget):
             "QLabel { "
             "background: rgba(57, 255, 20, 0.2); "
             "border: 3px solid #39FF14; "
-            "border-radius: 29px; "
+            "border-radius: 40px; "
             "color: #39FF14; "
-            "font-size: 16px; font-weight: 900; "
+            "font-size: 28px; font-weight: 900; "
             "}"
         )
 
     def _attempt_label_style(self, color: str):
         return (
-            f"font-size: 42px; font-weight: 900; color: {color}; "
+            f"font-size: 60px; font-weight: 900; color: {color}; "
             f"background: transparent; border: none; padding: 4px;"
         )
 
