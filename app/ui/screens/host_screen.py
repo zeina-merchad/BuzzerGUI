@@ -389,9 +389,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.logo_label = QLabel()
         self.logo_label.setPixmap(
                QPixmap(self.resource_path("app/ui/screens/logo_full.png")).scaled(
-                260, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                320, 320, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         self.logo_label.setAlignment(Qt.AlignCenter)
-        self.logo_label.setFixedSize(260, 260)
+        self.logo_label.setFixedSize(320, 320)
         self.logo_label.setStyleSheet("QLabel { background: transparent; border: none; }")
 
     def _build_player_columns(self):
@@ -405,6 +405,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         self.player_cards[1] = CornerPlayerCard(1)
         left_layout.addWidget(self.player_cards[1], alignment=Qt.AlignTop | Qt.AlignCenter)
+        left_layout.addStretch(1)
 
         self.cascading_widget = CascadingAttemptsWidget()
         left_layout.addWidget(self.cascading_widget, alignment=Qt.AlignCenter)
@@ -1044,10 +1045,22 @@ class HostScreen(RemoteKeyHandler, QWidget):
                 "padding: 18px 28px; border: 3px solid #e74c3c; "
                 "border-radius: 10px;"
             )
-            self.buzzers_unlocked = False
-            self.btn_unlock.setEnabled(True)
-            self.btn_unlock.setText("🔓 UNLOCK NEXT ATTEMPT")
-            self._unlock_buzzers()  # auto-unlock for timeout path
+            # AUTO-UNLOCK: directly open buzzers for remaining players
+            self.buzzers_unlocked = True
+            self.btn_unlock.setText("✅ BUZZERS ACTIVE")
+            self.btn_unlock.setEnabled(False)
+            self.status_label.setText(f"⏰ Player {player_id} TIMEOUT! Next player can buzz now!")
+            self.status_label.setStyleSheet(
+                "font-size: 22px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
+                "background: rgba(231, 76, 60, 0.2); "
+                "padding: 18px 28px; border: 3px solid #e74c3c; "
+                "border-radius: 10px;"
+            )
+            if self.mqtt_backend:
+                self.mqtt_backend.unlock_buzzers()
+            self.engine.notify_buzzers_unlocked()
+            self.engine.start_or_resume_question_timer()
+            self.sfx.play_start()
         else:
             self.status_label.setText("⏰ No attempts left! Click NEXT to continue.")
             self.status_label.setStyleSheet(
@@ -1151,7 +1164,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
             card.set_eliminated(False)
             card.highlight_locked(False)
 
-        self.timer.set_remaining_ms(self.engine.get_question_remaining_ms())
+        self.timer.reset()  # show -- until host unlocks; full timer starts then
 
         # Update round badge
         self._update_round_badge()
@@ -1188,11 +1201,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         alive_players = [pid for pid, alive in alive_map.items() if alive]
 
-        # Always update player cards (visible on host screen; harmless if hidden)
-        for pid, card in self.player_cards.items():
-            card.set_connected(pid in alive_players)
-
-        # Update engine's active player set so cascading logic is accurate
+        # Update engine active player set only — no player card UI changes
         if alive_players:
             self.engine.set_active_players(alive_players)
 
@@ -1317,10 +1326,22 @@ class HostScreen(RemoteKeyHandler, QWidget):
                 "padding: 12px 20px; border: 2px solid #e74c3c; "
                 "border-radius: 8px;"
             )
-            self.buzzers_unlocked = False
-            self.btn_unlock.setEnabled(True)
-            self.btn_unlock.setText("🔓 UNLOCK NEXT ATTEMPT")
-            self._unlock_buzzers()  # auto-unlock for next attempt
+            # AUTO-UNLOCK: directly open buzzers for remaining players
+            self.buzzers_unlocked = True
+            self.btn_unlock.setText("✅ BUZZERS ACTIVE")
+            self.btn_unlock.setEnabled(False)
+            self.status_label.setText(f"❌ Player {player_id} WRONG! Next player can buzz now!")
+            self.status_label.setStyleSheet(
+                "font-size: 22px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
+                "background: rgba(231, 76, 60, 0.2); "
+                "padding: 18px 28px; border: 3px solid #e74c3c; "
+                "border-radius: 10px;"
+            )
+            if self.mqtt_backend:
+                self.mqtt_backend.unlock_buzzers()
+            self.engine.notify_buzzers_unlocked()
+            self.engine.start_or_resume_question_timer()
+            self.sfx.play_start()
             self.btn_unlock.setStyleSheet(
                 "QPushButton { "
                 "background: rgba(255, 193, 7, 0.2); "
