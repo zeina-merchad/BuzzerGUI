@@ -134,6 +134,46 @@ class GameEngine(QObject):
         # Active players — defaults to all four for demo/test mode
         self._active_player_ids: Set[int] = {1, 2, 3, 4}
 
+        # Input debounce / admin transition safety
+        self._last_buzz_player_id: Optional[int] = None
+        self._last_buzz_at: float = 0.0
+        self._buzz_debounce_s: float = 0.20
+
+
+    # =========================================================================
+    # SNAPSHOT / TRANSITION GUARDS
+    # =========================================================================
+
+    def get_state_snapshot(self) -> dict:
+        return {
+            "phase": self.phase,
+            "locked_player": self.locked_buzzer_id,
+            "active_player_ids": sorted(self._active_player_ids),
+            "players_attempted": sorted(self.players_attempted),
+            "scores": dict(self.scores.scores),
+            "current_attempt_number": self.current_attempt_number,
+            "question_index": self.current_q_idx,
+            "question_remaining_ms": int(self._question_remaining_ms),
+            "answer_remaining_ms": int(self._answer_remaining_ms),
+        }
+
+    def can_transition(self, action: str) -> bool:
+        action = str(action).strip().lower()
+        if action == "unlock":
+            return self.phase == Phase.SHOW_QUESTION and bool(self.get_players_remaining())
+        if action == "next":
+            return self.phase in (Phase.IDLE, Phase.GAME_END)
+        if action == "buzz":
+            return self.phase == Phase.SHOW_QUESTION and self.locked_buzzer_id is None
+        if action == "answer":
+            return self.phase == Phase.BUZZED and self.locked_buzzer_id is not None
+        if action == "bonus":
+            return self.phase != Phase.GAME_END
+        return True
+
+    def _clear_current_lock(self) -> None:
+        self._clear_current_lock()
+
     # =========================================================================
     # ACTIVE PLAYER MANAGEMENT
     # =========================================================================
@@ -163,10 +203,7 @@ class GameEngine(QObject):
             self.players_attempted.add(pid)
             self.attempt_failed.emit(pid, self.current_attempt_number)
 
-            self.locked_buzzer_id = None
-            self.lock_changed.emit(None)
-            self.answer_timer.stop()
-            self._answer_remaining_ms = 0
+            self._clear_current_lock()
 
             question = self.current_question()
             remaining_players = self.get_players_remaining()
@@ -251,6 +288,14 @@ class GameEngine(QObject):
             print(f"[ENGINE] ✗ Buzz rejected - Player {buzzer_id} is not registered as active")
             return False
 
+        now = time.monotonic()
+        if (
+            self._last_buzz_player_id == buzzer_id
+            and (now - self._last_buzz_at) < self._buzz_debounce_s
+        ):
+            print(f"[ENGINE] ✗ Buzz rejected - debounce hit for P{buzzer_id}")
+            return False
+
         if buzzer_id in self.players_attempted:
             self.error_occurred.emit(f"Player {buzzer_id} already attempted this question")
             print(f"[ENGINE] ✗ Player {buzzer_id} already attempted")
@@ -266,6 +311,8 @@ class GameEngine(QObject):
             return False
 
         self.locked_buzzer_id = buzzer_id
+        self._last_buzz_player_id = buzzer_id
+        self._last_buzz_at = now
         self.lock_changed.emit(buzzer_id)
 
         self.phase = Phase.BUZZED
@@ -542,6 +589,8 @@ class GameEngine(QObject):
 
         self._undo_stack.clear()
         self._redo_stack.clear()
+        self._last_buzz_player_id = None
+        self._last_buzz_at = 0.0
 
         self._stop_all_timers()
 
@@ -648,6 +697,8 @@ class GameEngine(QObject):
         self._answer_remaining_ms = 0
         self._undo_stack.clear()
         self._redo_stack.clear()
+        self._last_buzz_player_id = None
+        self._last_buzz_at = 0.0
 
         self.phase = Phase.IDLE
         self.phase_changed.emit(self.phase.value)
@@ -734,9 +785,7 @@ class GameEngine(QObject):
 
             print(f"[ENGINE] ✓ Player {pid} correct! +{points} pts (Attempt {self.current_attempt_number})")
 
-            self.locked_buzzer_id = None
-            self.lock_changed.emit(None)
-            self.answer_timer.stop()
+            self._clear_current_lock()
             self.phase = Phase.IDLE
             self.phase_changed.emit(self.phase.value)
 
@@ -773,8 +822,7 @@ class GameEngine(QObject):
                 self.current_attempt_number += 1
                 self.attempt_changed.emit(self.current_attempt_number)
 
-                self.locked_buzzer_id = None
-                self.lock_changed.emit(None)
+                self._clear_current_lock()
 
                 # FIX #13: respect reset_timer_each_attempt — only reset to
                 # full time when the flag is True; otherwise resume from the

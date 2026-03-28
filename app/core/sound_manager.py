@@ -79,6 +79,7 @@ class SoundManager(QObject):
         try:
             sound = self._sounds.get(sound_id)
             if sound and sound.isLoaded():
+                self.stop_all()
                 sound.play()
             else:
                 # Fallback: print to console

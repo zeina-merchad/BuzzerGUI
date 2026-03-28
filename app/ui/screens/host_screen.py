@@ -340,6 +340,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.sfx = create_sound_manager()
         self._warned_7 = False
         self._warned_3 = False
+        self.simulation_mode = True
 
         self._build_ui()
         self._connect_engine_signals()
@@ -664,16 +665,21 @@ class HostScreen(RemoteKeyHandler, QWidget):
         if hasattr(self.engine, 'question_advanced'):
             self.engine.question_advanced.connect(self._on_engine_question_advanced)
 
-    def _refresh_player_cards_from_engine(self, reset_eliminations: bool = False):
-        active_ids = set(getattr(self.engine, "_active_player_ids", set()))
-        attempted_ids = set() if reset_eliminations else set(getattr(self.engine, "players_attempted", set()))
-        locked_id = getattr(self.engine, "locked_buzzer_id", None)
+
+    def _render_from_engine_snapshot(self, snapshot: dict, reset_eliminations: bool = False):
+        active_ids = set(snapshot.get("active_player_ids", []))
+        attempted_ids = set() if reset_eliminations else set(snapshot.get("players_attempted", []))
+        locked_id = snapshot.get("locked_player")
+        scores = snapshot.get("scores", {})
 
         for pid, card in self.player_cards.items():
             card.set_connected(pid in active_ids)
             card.set_eliminated(pid in attempted_ids)
             card.highlight_locked(pid == locked_id)
-            card.set_score(self.engine.scores.scores.get(pid, 0))
+            card.set_score(scores.get(pid, 0))
+
+    def _refresh_player_cards_from_engine(self, reset_eliminations: bool = False):
+        self._render_from_engine_snapshot(self.engine.get_state_snapshot(), reset_eliminations=reset_eliminations)
 
     def _on_timer_changed_ui(self, remaining_ms: int):
         # Update the timer widget for both question timer AND answer countdown.
@@ -702,8 +708,46 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.correct_flash.resize_to_parent()
 
     def keyPressEvent(self, event):
-        if not self._handle_remote_key(event):
-            super().keyPressEvent(event)
+        if self._handle_remote_key(event):
+            return
+        if self._handle_simulation_key(event):
+            return
+        super().keyPressEvent(event)
+
+
+    def _handle_simulation_key(self, event) -> bool:
+        if not self.simulation_mode or event.modifiers() != Qt.NoModifier:
+            return False
+
+        key = event.key()
+        buzz_map = {Qt.Key_1: 1, Qt.Key_2: 2, Qt.Key_3: 3, Qt.Key_4: 4}
+        ans_map = {Qt.Key_A: 'A', Qt.Key_B: 'B', Qt.Key_C: 'C', Qt.Key_D: 'D'}
+
+        if key in buzz_map:
+            self._simulate_buzz(buzz_map[key])
+            return True
+        if key in ans_map:
+            self._simulate_answer(ans_map[key])
+            return True
+        return False
+
+    def _simulate_buzz(self, player_id: int):
+        if not self.game_started or not self.engine.can_transition("buzz"):
+            return
+        now_ms = int(time.time() * 1000)
+        accepted = self.engine.on_buzz(player_id, now_ms, now_ms)
+        if accepted:
+            self.status_label.setText(f"🧪 Simulated buzz from Player {player_id}")
+            self.sfx.play_buzz()
+
+    def _simulate_answer(self, answer: str):
+        if not self.game_started or not self.engine.can_transition("answer"):
+            return
+        locked = self.engine.locked_buzzer_id
+        if locked is None:
+            return
+        self.status_label.setText(f"🧪 Simulated answer {answer} from Player {locked}")
+        self._auto_judge_answer(locked, answer)
 
     def _on_engine_question_advanced(self):
         self._prepare_current_question_ui()
@@ -754,7 +798,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.round_badge.hide()
 
     def _load_prev_question(self):
-        if not self.game_started:
+        if not self.game_started or not self.engine.can_transition("bonus"):
             return
         if self.engine.current_q_idx < 1:
             self.status_label.setText("⏮️ Already at the first question.")
@@ -763,11 +807,13 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self._prepare_current_question_ui()
 
     def _load_next_question(self):
-        if not self.game_started:
+        if not self.game_started or not self.engine.can_transition("bonus"):
             return
 
         if self.engine.phase == Phase.GAME_END:
             self._show_winner_screen()
+            return
+        if not self.engine.can_transition("next"):
             return
 
         if self.engine.cfg.rounds > 1:
@@ -992,7 +1038,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
             print(f"🚫 Buzz rejected from Player {player_id}")
 
     def _on_mqtt_answer(self, answer_event):
-        if not self.game_started:
+        if not self.game_started or not self.engine.can_transition("bonus"):
             return
 
         player_id = answer_event.player_id
@@ -1075,10 +1121,10 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
 
     def _unlock_buzzers(self):
-        if not self.game_started:
+        if not self.game_started or not self.engine.can_transition("bonus"):
             return
 
-        if self.engine.phase != Phase.SHOW_QUESTION:
+        if not self.engine.can_transition("unlock"):
             return
 
         remaining_players = self.engine.get_players_remaining()
@@ -1095,13 +1141,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.btn_unlock.setEnabled(False)
         self.btn_unlock.setText("🔓 BUZZERS LIVE")
 
-        for pid, card in self.player_cards.items():
-            card.highlight_locked(False)
-            card.set_connected(pid in getattr(self.engine, "_active_player_ids", set()))
-            if pid in self.engine.players_attempted:
-                card.set_eliminated(True)
-            else:
-                card.set_eliminated(False)
+        self._refresh_player_cards_from_engine()
 
         self.status_label.setText("✅ Buzzers unlocked - waiting for fastest player.")
         self.status_label.setStyleSheet(
@@ -1117,7 +1157,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.engine.start_or_resume_question_timer()
 
     def _update_connection_status(self):
-        pass  # passive — card UI only changes on real MQTT events
+        self._refresh_player_cards_from_engine()
 
     # =========================================================================
     # QUESTION SETUP
@@ -1219,12 +1259,14 @@ class HostScreen(RemoteKeyHandler, QWidget):
                 self.mqtt_backend.unlock_buzzers()
             self.engine.notify_buzzers_unlocked()
             self.engine.start_or_resume_question_timer()
+            self._refresh_player_cards_from_engine()
             self.sfx.play_start()
         else:
             self.buzzers_unlocked = False
             self.btn_next.setEnabled(True)
             self.btn_next.setText("▶️ NEXT QUESTION")
             self.btn_unlock.setEnabled(False)
+            self._refresh_player_cards_from_engine()
             self.status_label.setText("❌ All attempts exhausted! Click NEXT to continue.")
             self.status_label.setStyleSheet(
                 "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
@@ -1286,6 +1328,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
             if self.mqtt_backend:
                 self.mqtt_backend.mark_answer_correct(player_id)
 
+            self._refresh_player_cards_from_engine()
             self.btn_next.setEnabled(True)
             self.btn_next.setText("▶️ NEXT QUESTION")
             self.btn_unlock.setEnabled(False)
@@ -1301,6 +1344,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         if self.mqtt_backend:
             self.mqtt_backend.mark_answer_wrong(player_id)
 
+        self._refresh_player_cards_from_engine()
         self._handle_wrong_answer_ui(player_id)
 
     # =========================================================================
@@ -1400,7 +1444,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
     def _award_bonus_point(self):
         # FIX #11: only allow bonus awards when a game is actually in progress
-        if not self.game_started:
+        if not self.game_started or not self.engine.can_transition("bonus"):
             return
 
         dialog = QDialog(self)
