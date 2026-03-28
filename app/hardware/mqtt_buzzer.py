@@ -199,13 +199,43 @@ class MQTTBuzzerBackend:
             self.connected = False
             print(f"[MQTT] ❌ Broker connect failed (rc={rc})")
 
+
     def _on_disconnect(self, client, userdata, rc) -> None:
         self.connected = False
+
+        for pid in list(self.connected_players.keys()):
+            if pid not in self._known_disconnected:
+                self._known_disconnected.add(pid)
+                self.bridge.player_disconnected.emit(pid)
+
         if rc != 0:
             print(f"[MQTT] ⚠ Unexpected disconnect (rc={rc})")
         else:
             print("[MQTT] Disconnected")
+    def _update_player_connection(self, player_id: int) -> None:
+        now = time.time()
+        was_connected = player_id in self.connected_players
+        was_known_disconnected = player_id in self._known_disconnected
 
+        self.connected_players[player_id] = now
+        self._known_disconnected.discard(player_id)
+
+        if not was_connected or was_known_disconnected:
+            print(f"[MQTT] ✓ Player {player_id} connected")
+            self.bridge.player_connected.emit(player_id)
+    def _passive_disconnect_check(self) -> None:
+        now = time.time()
+        if now - self._last_conn_check < self._CONN_CHECK_INTERVAL_S:
+            return
+
+        self._last_conn_check = now
+
+        for pid, last_seen in list(self.connected_players.items()):
+            if (now - last_seen) > self.heartbeat_timeout:
+                if pid not in self._known_disconnected:
+                    self._known_disconnected.add(pid)
+                    print(f"[MQTT] ✗ Player {pid} timed out (last seen {now - last_seen:.1f}s ago)")
+                    self.bridge.player_disconnected.emit(pid)
     def _on_message(self, client, userdata, msg) -> None:
         try:
             topic   = msg.topic
@@ -239,26 +269,6 @@ class MQTTBuzzerBackend:
     # =========================================================================
     # PLAYER CONNECTION TRACKING
     # =========================================================================
-
-    def _update_player_connection(self, player_id: int) -> None:
-        now = time.time()
-        was_connected = player_id in self.connected_players
-        self.connected_players[player_id] = now
-        self._known_disconnected.discard(player_id)
-        if not was_connected:
-            print(f"[MQTT] ✓ Player {player_id} connected")
-            self.bridge.player_connected.emit(player_id)
-
-    def _passive_disconnect_check(self) -> None:
-        now = time.time()
-        if now - self._last_conn_check < self._CONN_CHECK_INTERVAL_S:
-            return
-        self._last_conn_check = now
-        for pid, last_seen in list(self.connected_players.items()):
-            if (now - last_seen) > self.heartbeat_timeout:
-                if pid not in self._known_disconnected:
-                    self._known_disconnected.add(pid)
-                    print(f"[MQTT] ✗ Player {pid} timed out (last seen {now - last_seen:.1f}s ago)")
 
     def get_connected_players(self, timeout_seconds: int = 60) -> List[int]:
         now = time.time()

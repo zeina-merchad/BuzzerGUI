@@ -135,18 +135,198 @@ class GameEngine(QObject):
     # =========================================================================
 
     def register_active_player(self, player_id: int) -> None:
-        self._active_player_ids.add(int(player_id))
-
+        pid = int(player_id)
+        if pid not in self._active_player_ids:
+            self._active_player_ids.add(pid)
+            print(f"[ENGINE] Player {pid} registered as active")
     def unregister_active_player(self, player_id: int) -> None:
-        self._active_player_ids.discard(int(player_id))
+        pid = int(player_id)
+        was_active = pid in self._active_player_ids
+        self._active_player_ids.discard(pid)
 
+        if not was_active:
+            return
+
+        print(f"[ENGINE] Player {pid} unregistered from active players")
+
+        if self.locked_buzzer_id == pid and self.phase == Phase.BUZZED:
+            print(f"[ENGINE] Locked player P{pid} disconnected during answer phase")
+
+            self.players_attempted.add(pid)
+            self.attempt_failed.emit(pid, self.current_attempt_number)
+
+            self.locked_buzzer_id = None
+            self.lock_changed.emit(None)
+            self.timer.stop()
+            self._answer_remaining_ms = 0
+
+            question = self.current_question()
+            remaining_players = self.get_players_remaining()
+
+            if (
+                self.cfg.enable_cascading_attempts
+                and self.current_attempt_number < question.max_attempts
+                and remaining_players
+            ):
+                self.current_attempt_number += 1
+                self.attempt_changed.emit(self.current_attempt_number)
+
+                if self.cfg.reset_timer_each_attempt or self._question_remaining_ms <= 0:
+                    self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
+
+                self.phase = Phase.SHOW_QUESTION
+                self.phase_changed.emit(self.phase.value)
+                print(f"[ENGINE] Continuing question after disconnect; remaining players: {remaining_players}")
+                return
+
+            self._on_all_attempts_exhausted()
+            return
+
+        if self.phase == Phase.SHOW_QUESTION and not self.get_players_remaining():
+            print("[ENGINE] No active players remain for current question")
+            self._on_all_attempts_exhausted()
     def set_active_players(self, player_ids) -> None:
+        old_active = set(self._active_player_ids)
+        new_active = set(int(p) for p in player_ids)
+
+        added = new_active - old_active
+        removed = old_active - new_active
+
+        self._active_player_ids = old_active | added
+
+        for pid in sorted(added):
+            print(f"[ENGINE] Player {pid} became active")
+
+        for pid in sorted(removed):
+            self.unregister_active_player(pid)
+
         self._active_player_ids = set(int(p) for p in player_ids)
+    def start_or_resume_question_timer(self) -> None:
+        if self.phase != Phase.SHOW_QUESTION:
+            return
 
-    # =========================================================================
-    # TIMER BOOKKEEPING
-    # =========================================================================
+        if not self.get_players_remaining():
+            print("[ENGINE] Refusing to start question timer: no active players remaining")
+            return
 
+        full_ms = int(self.cfg.timer_seconds * 1000)
+
+        if self.cfg.reset_timer_each_attempt:
+            self._question_remaining_ms = full_ms
+        elif self._question_remaining_ms <= 0:
+            self._question_remaining_ms = full_ms
+
+        self.timer.start(self._question_remaining_ms)
+    def on_buzz(self, buzzer_id: int, t_ms: int, received_ms: int) -> bool:
+        if self.phase != Phase.SHOW_QUESTION:
+            print(f"[ENGINE] ✗ Buzz rejected - wrong phase ({self.phase.value})")
+            return False
+
+        if buzzer_id not in self._active_player_ids:
+            print(f"[ENGINE] ✗ Buzz rejected - Player {buzzer_id} is not registered as active")
+            return False
+
+        if buzzer_id in self.players_attempted:
+            self.error_occurred.emit(f"Player {buzzer_id} already attempted this question")
+            print(f"[ENGINE] ✗ Player {buzzer_id} already attempted")
+            return False
+
+        if self.locked_buzzer_id is not None:
+            print(f"[ENGINE] ✗ Buzz rejected - Player {self.locked_buzzer_id} already locked")
+            return False
+
+        if self.timer.remaining_ms <= 0 and self._question_remaining_ms <= 0:
+            print(f"[ENGINE] ✗ Buzz rejected - question timer already expired")
+            return False
+
+        self.locked_buzzer_id = buzzer_id
+        self.lock_changed.emit(buzzer_id)
+
+        self.phase = Phase.BUZZED
+        self.phase_changed.emit(self.phase.value)
+
+        remaining = int(self.timer.remaining_ms)
+        if remaining > 0:
+            self._question_remaining_ms = remaining
+        self.timer.stop()
+
+        answer_time_ms = max(500, int(self.cfg.answer_seconds * 1000))
+        self._answer_remaining_ms = answer_time_ms
+        self.timer.start(answer_time_ms)
+
+        print(f"[ENGINE] ✓ Player {buzzer_id} BUZZED IN (Attempt {self.current_attempt_number})")
+        print(f"[ENGINE]   Answer timer started: {self.cfg.answer_seconds}s")
+        return True
+    def _on_timer_ended(self) -> None:
+        """Handle timer expiration safely for both question and answer phases."""
+        if self.phase == Phase.SHOW_QUESTION:
+            print("[ENGINE] ⏰ Question timer expired")
+
+            question = self.current_question()
+            remaining_players = self.get_players_remaining()
+
+            if not remaining_players:
+                self._on_all_attempts_exhausted()
+                return
+
+            if self.cfg.enable_cascading_attempts and self.current_attempt_number < question.max_attempts:
+                self.current_attempt_number += 1
+                self.attempt_changed.emit(self.current_attempt_number)
+
+                self.locked_buzzer_id = None
+                self.lock_changed.emit(None)
+                self.timer.stop()
+
+                self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
+
+                self.phase = Phase.SHOW_QUESTION
+                self.phase_changed.emit(self.phase.value)
+
+                print(f"[ENGINE] Moving to attempt {self.current_attempt_number}")
+                return
+
+            self._on_all_attempts_exhausted()
+            return
+
+        if self.phase == Phase.BUZZED:
+            print("[ENGINE] ⏰ Answer timer expired")
+
+            if self.locked_buzzer_id is None:
+                self._on_all_attempts_exhausted()
+                return
+
+            pid = self.locked_buzzer_id
+            self.players_attempted.add(pid)
+            self.stats.record_answer(False, pid, self.cfg.answer_seconds * 1000, self.current_attempt_number)
+            self.stats_changed.emit()
+            self.attempt_failed.emit(pid, self.current_attempt_number)
+
+            self.locked_buzzer_id = None
+            self.lock_changed.emit(None)
+            self.timer.stop()
+            self._answer_remaining_ms = 0
+
+            question = self.current_question()
+            remaining_players = self.get_players_remaining()
+
+            if (
+                self.cfg.enable_cascading_attempts
+                and self.current_attempt_number < question.max_attempts
+                and remaining_players
+            ):
+                self.current_attempt_number += 1
+                self.attempt_changed.emit(self.current_attempt_number)
+
+                if self.cfg.reset_timer_each_attempt or self._question_remaining_ms <= 0:
+                    self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
+
+                self.phase = Phase.SHOW_QUESTION
+                self.phase_changed.emit(self.phase.value)
+
+                print(f"[ENGINE] Answer timeout on P{pid}; continuing with players {remaining_players}")
+                return
+
+            self._on_all_attempts_exhausted()
     def _on_timer_changed(self, remaining_ms: int) -> None:
         if self.phase == Phase.SHOW_QUESTION:
             self._question_remaining_ms = int(remaining_ms)
@@ -154,18 +334,6 @@ class GameEngine(QObject):
             self._answer_remaining_ms = int(remaining_ms)
         self.timer_changed.emit(int(remaining_ms))
 
-    def start_or_resume_question_timer(self) -> None:
-        if self.phase != Phase.SHOW_QUESTION:
-            return
-
-        full_ms = int(self.cfg.timer_seconds * 1000)
-        if self.cfg.reset_timer_each_attempt:
-            self._question_remaining_ms = full_ms
-        else:
-            if self._question_remaining_ms <= 0:
-                self._question_remaining_ms = full_ms
-
-        self.timer.start(self._question_remaining_ms)
 
     # =========================================================================
     # GETTERS
@@ -580,50 +748,6 @@ class GameEngine(QObject):
 
         self._on_all_attempts_exhausted()
 
-    # =========================================================================
-    # BUZZER INPUT
-    # =========================================================================
-
-    def on_buzz(self, buzzer_id: int, t_ms: int, received_ms: int) -> bool:
-        """Handle buzz event with cascading attempts support.
-
-        FIX #14: reject buzz from a player not in _active_player_ids so that
-        phantom / unregistered devices cannot steal the lock.
-        """
-        if self.phase != Phase.SHOW_QUESTION:
-            print(f"[ENGINE] ✗ Buzz rejected - wrong phase ({self.phase.value})")
-            return False
-
-        # FIX #14: guard against unregistered players
-        if buzzer_id not in self._active_player_ids:
-            print(f"[ENGINE] ✗ Buzz rejected - Player {buzzer_id} is not registered as active")
-            return False
-
-        if buzzer_id in self.players_attempted:
-            self.error_occurred.emit(f"Player {buzzer_id} already attempted this question")
-            print(f"[ENGINE] ✗ Player {buzzer_id} already attempted")
-            return False
-
-        if self.locked_buzzer_id is not None:
-            print(f"[ENGINE] ✗ Buzz rejected - Player {self.locked_buzzer_id} already locked")
-            return False
-
-        self.locked_buzzer_id = buzzer_id
-        self.lock_changed.emit(buzzer_id)
-
-        self.phase = Phase.BUZZED
-        self.phase_changed.emit(self.phase.value)
-
-        self._question_remaining_ms = int(self.timer.remaining_ms)
-        self.timer.stop()
-
-        answer_time_ms = max(500, int(self.cfg.answer_seconds * 1000))
-        self._answer_remaining_ms = answer_time_ms
-        self.timer.start(answer_time_ms)
-
-        print(f"[ENGINE] ✓ Player {buzzer_id} BUZZED IN (Attempt {self.current_attempt_number})")
-        print(f"[ENGINE]   Answer timer started: {self.cfg.answer_seconds}s")
-        return True
 
     def notify_buzzers_unlocked(self) -> None:
         self.buzz_unlock_time_ms = int(time.time() * 1000)
@@ -723,112 +847,3 @@ class GameEngine(QObject):
         self.phase_changed.emit(self.phase.value)
 
         print("[ENGINE] ⏸️ All attempts exhausted - waiting for admin to advance")
-
-    # =========================================================================
-    # INTERNAL CALLBACKS
-    # =========================================================================
-
-    def _on_timer_ended(self) -> None:
-        """Handle timer expiration."""
-        if self.phase == Phase.SHOW_QUESTION:
-            # FIX: When the question timer expires mid-cascade (attempt > 1),
-            # the current "locked" player is nobody — but any players who have
-            # NOT yet attempted should still be penalised the same way as a
-            # timeout in BUZZED phase, and the cascade should continue if more
-            # attempts remain.  Previously the engine always jumped to IDLE
-            # here, skipping attempt tracking entirely.
-            print("[ENGINE] ⏰ Question time's up!")
-
-            question = self.current_question()
-            if (self.cfg.enable_cascading_attempts
-                    and self.current_attempt_number < question.max_attempts
-                    and self.get_players_remaining()):
-                # There are still attempts available — advance to the next one
-                # so remaining players have a chance.
-                self.current_attempt_number += 1
-                self.attempt_changed.emit(self.current_attempt_number)
-
-                self.locked_buzzer_id = None
-                self.lock_changed.emit(None)
-                self.timer.stop()
-
-                if self.cfg.reset_timer_each_attempt:
-                    self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
-                # else: preserve remaining (which is 0; host must re-unlock)
-
-                self.phase = Phase.SHOW_QUESTION
-                self.phase_changed.emit(self.phase.value)
-
-                print(f"[ENGINE] → Timer expired mid-cascade; next attempt "
-                      f"({self.current_attempt_number}/{question.max_attempts}), "
-                      f"remaining players: {self.get_players_remaining()}")
-                return
-
-            # No more cascade — question is over
-            self.answered_questions.add(self.current_q_idx)
-            print("[ENGINE] ⏰ No one buzzed (or all attempts used). Moving on.")
-
-            self.locked_buzzer_id = None
-            self.lock_changed.emit(None)
-            self.timer.stop()
-            self.phase = Phase.IDLE
-            self.phase_changed.emit(self.phase.value)
-
-            print("[ENGINE] ⏸️ Waiting for admin to advance")
-
-        elif self.phase == Phase.BUZZED:
-            pid = self.locked_buzzer_id
-            print(f"[ENGINE] ⏰ Answer time's up! Player {pid} didn't answer in time.")
-
-            if pid:
-                current_time_ms = int(time.time() * 1000)
-                ref_time = self.buzz_unlock_time_ms if self.buzz_unlock_time_ms else self.question_start_time_ms
-                buzz_time_ms = current_time_ms - ref_time
-
-                if self.cfg.penalty_for_wrong > 0:
-                    penalty = -self.cfg.penalty_for_wrong
-                    reason = f"Timeout - Q{self.current_q_idx + 1}"
-                    self.scores.add(pid, penalty, reason)
-                    self.scores_changed.emit()
-
-                # FIX #15: record the timeout in stats and attempt_records,
-                # matching the path taken by apply_answer() for wrong answers.
-                self.stats.record_answer(False, pid, buzz_time_ms, self.current_attempt_number)
-                self.stats_changed.emit()
-
-                self.attempt_records.append(AttemptRecord(
-                    player_id=pid,
-                    is_correct=False,
-                    points_awarded=-self.cfg.penalty_for_wrong if self.cfg.penalty_for_wrong > 0 else 0,
-                    attempt_number=self.current_attempt_number,
-                    buzz_time_ms=buzz_time_ms,
-                ))
-
-                self.players_attempted.add(pid)
-                self.attempt_failed.emit(pid, self.current_attempt_number)
-
-                question = self.current_question()
-
-                # FIX #13: respect reset_timer_each_attempt on timeout cascade
-                if self.cfg.enable_cascading_attempts and self.current_attempt_number < question.max_attempts:
-                    remaining_players = self.get_players_remaining()
-                    if remaining_players:
-                        self.current_attempt_number += 1
-                        self.attempt_changed.emit(self.current_attempt_number)
-
-                        self.locked_buzzer_id = None
-                        self.lock_changed.emit(None)
-                        self.timer.stop()
-
-                        if self.cfg.reset_timer_each_attempt:
-                            self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
-                        # else: preserve whatever was left on the question timer
-
-                        self.phase = Phase.SHOW_QUESTION
-                        self.phase_changed.emit(self.phase.value)
-
-                        print(f"[ENGINE] → Next attempt available ({self.current_attempt_number}/{question.max_attempts})")
-                        print(f"[ENGINE] → Remaining players: {remaining_players}")
-                        return
-
-                self._on_all_attempts_exhausted()
