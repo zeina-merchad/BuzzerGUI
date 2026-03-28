@@ -19,27 +19,16 @@ class WinnerScreen(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.setWindowFlags(
-            Qt.Dialog
-            | Qt.FramelessWindowHint
-            | Qt.WindowStaysOnTopHint
-        )
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setFixedSize(self.DIALOG_W, self.DIALOG_H)
 
-        self.team_colors = {
-            1: "#e74c3c",
-            2: "#3498db",
-            3: "#2ecc71",
-            4: "#f39c12",
-        }
+        self.team_colors = {1: "#e74c3c", 2: "#3498db", 3: "#2ecc71", 4: "#f39c12"}
 
         self.setStyleSheet(
             "QDialog { "
             "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
             "stop:0 #0d1b2a, stop:1 #1a2a3a); "
-            "border: 3px solid rgba(255,215,0,0.5); "
-            "border-radius: 18px; "
-            "}"
+            "border: 3px solid rgba(255,215,0,0.5); border-radius: 18px; }"
         )
 
         main_layout = QVBoxLayout(self)
@@ -87,7 +76,10 @@ class WinnerScreen(QDialog):
 
         header_row.addLayout(title_col, stretch=1)
 
-        # Wrap header in a gold frame
+        # FIX #9: give the layout a named reference so Qt does not silently
+        # drop it.  Previously QHBoxLayout(winner_frame) was created and
+        # immediately discarded — only accessed via winner_frame.layout() which
+        # could return None if Qt's internal ref-count dropped it.
         winner_frame = QFrame()
         winner_frame.setStyleSheet(
             "QFrame { "
@@ -96,16 +88,15 @@ class WinnerScreen(QDialog):
             "stop:1 rgba(57,255,20,0.15)); "
             "border: 2px solid #ffd700; border-radius: 14px; padding: 12px; }"
         )
-        QHBoxLayout(winner_frame)
-        winner_frame.layout().addLayout(header_row)
+        winner_frame_layout = QHBoxLayout(winner_frame)   # named — not anonymous
+        winner_frame_layout.addLayout(header_row)
         main_layout.addWidget(winner_frame)
 
         # ── Final scores grid ─────────────────────────────────────────────────
         scores_frame = QFrame()
         scores_frame.setStyleSheet(
             "QFrame { background: rgba(20,30,45,0.8); "
-            "border: 2px solid rgba(57,255,20,0.3); "
-            "border-radius: 14px; }"
+            "border: 2px solid rgba(57,255,20,0.3); border-radius: 14px; }"
         )
         scores_layout = QVBoxLayout(scores_frame)
         scores_layout.setContentsMargins(16, 12, 16, 12)
@@ -124,19 +115,16 @@ class WinnerScreen(QDialog):
         self.scores_grid.setContentsMargins(0, 0, 0, 0)
 
         self.player_score_widgets = {}
-
         for i in range(4):
-            player_id = i + 1
-            color = self.team_colors[player_id]
+            pid   = i + 1
+            color = self.team_colors[pid]
 
             card = QFrame()
             card.setFixedHeight(66)
             card.setStyleSheet(
                 f"QFrame {{ background: rgba(30,40,55,0.9); "
-                f"border-left: 5px solid {color}; "
-                f"border-radius: 10px; padding: 8px; }}"
+                f"border-left: 5px solid {color}; border-radius: 10px; padding: 8px; }}"
             )
-
             card_layout = QHBoxLayout(card)
             card_layout.setSpacing(12)
             card_layout.setContentsMargins(8, 4, 8, 4)
@@ -150,7 +138,7 @@ class WinnerScreen(QDialog):
             )
             card_layout.addWidget(rank_label)
 
-            name_label = QLabel(f"PLAYER {player_id}")
+            name_label = QLabel(f"PLAYER {pid}")
             name_label.setStyleSheet(
                 "font-size: 16px; font-weight: 900; color: white; background: transparent;"
             )
@@ -164,12 +152,7 @@ class WinnerScreen(QDialog):
             )
             card_layout.addWidget(score_label)
 
-            self.player_score_widgets[player_id] = {
-                'card': card,
-                'rank': rank_label,
-                'score': score_label,
-            }
-
+            self.player_score_widgets[pid] = {"card": card, "rank": rank_label, "score": score_label}
             self.scores_grid.addWidget(card, i // 2, i % 2)
 
         scores_layout.addLayout(self.scores_grid)
@@ -182,9 +165,8 @@ class WinnerScreen(QDialog):
         self.btn_play_again = QPushButton("PLAY AGAIN")
         self.btn_play_again.setFixedHeight(52)
         self.btn_play_again.setStyleSheet(
-            "QPushButton { background: rgba(57,255,20,0.22); "
-            "border: 3px solid #39FF14; border-radius: 10px; "
-            "font-size: 18px; font-weight: 900; color: white; }"
+            "QPushButton { background: rgba(57,255,20,0.22); border: 3px solid #39FF14; "
+            "border-radius: 10px; font-size: 18px; font-weight: 900; color: white; }"
             "QPushButton:hover { background: rgba(57,255,20,0.42); }"
             "QPushButton:pressed { background: rgba(57,255,20,0.62); }"
         )
@@ -193,9 +175,8 @@ class WinnerScreen(QDialog):
         self.btn_exit = QPushButton("EXIT")
         self.btn_exit.setFixedHeight(52)
         self.btn_exit.setStyleSheet(
-            "QPushButton { background: rgba(231,76,60,0.22); "
-            "border: 3px solid #e74c3c; border-radius: 10px; "
-            "font-size: 18px; font-weight: 900; color: white; }"
+            "QPushButton { background: rgba(231,76,60,0.22); border: 3px solid #e74c3c; "
+            "border-radius: 10px; font-size: 18px; font-weight: 900; color: white; }"
             "QPushButton:hover { background: rgba(231,76,60,0.42); }"
             "QPushButton:pressed { background: rgba(231,76,60,0.62); }"
         )
@@ -223,7 +204,6 @@ class WinnerScreen(QDialog):
     # ── Data ──────────────────────────────────────────────────────────────────
 
     def set_results(self, scores: dict, winner_id: int):
-        """Display final results with tie detection."""
         ranked_players = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
         if not ranked_players:
@@ -233,18 +213,16 @@ class WinnerScreen(QDialog):
             return
 
         top_score = ranked_players[0][1]
-        winners = [pid for pid, s in ranked_players if s == top_score] if top_score > 0 else []
+        winners   = [pid for pid, s in ranked_players if s == top_score] if top_score > 0 else []
 
         if not winners:
             self.winner_crown_label.setText("GAME OVER")
             self.winner_crown_label.setStyleSheet(
-                "font-size: 32px; font-weight: 900; color: rgba(255,255,255,0.5); "
-                "background: transparent;"
+                "font-size: 32px; font-weight: 900; color: rgba(255,255,255,0.5); background: transparent;"
             )
             self.winner_name.setText("No winner")
             self.winner_name.setStyleSheet(
-                "font-size: 42px; font-weight: 900; color: rgba(255,255,255,0.4); "
-                "background: transparent;"
+                "font-size: 42px; font-weight: 900; color: rgba(255,255,255,0.4); background: transparent;"
             )
         elif len(winners) > 1:
             self.winner_crown_label.setText("IT'S A TIE!")
@@ -268,50 +246,48 @@ class WinnerScreen(QDialog):
 
         self.winner_score.setText(f"{top_score} POINTS")
 
-        rank_medals   = {1: "🥇", 2: "🥈", 3: "🥉", 4: "🎖️"}
-        grid_positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
+        rank_medals    = {1: "🥇", 2: "🥈", 3: "🥉", 4: "🎖️"}
+        grid_positions = [(0,0),(0,1),(1,0),(1,1)]
 
-        for rank, (player_id, score) in enumerate(ranked_players, start=1):
-            if player_id not in self.player_score_widgets:
+        for rank, (pid, score) in enumerate(ranked_players, start=1):
+            if pid not in self.player_score_widgets:
                 continue
-            w = self.player_score_widgets[player_id]
+            w          = self.player_score_widgets[pid]
+            row, col   = grid_positions[rank - 1]
+            self.scores_grid.addWidget(w["card"], row, col)
+            w["rank"].setText(rank_medals[rank])
+            w["score"].setText(f"{score} pts")
 
-            row, col = grid_positions[rank - 1]
-            self.scores_grid.addWidget(w['card'], row, col)
-            w['rank'].setText(rank_medals[rank])
-            w['score'].setText(f"{score} pts")
-
-            color = self.team_colors.get(player_id, "#888")
-            is_winner = player_id in winners
+            color    = self.team_colors.get(pid, "#888")
+            is_winner = pid in winners
 
             if is_winner and len(winners) == 1:
                 wc = self.team_colors.get(winner_id, color)
-                w['card'].setStyleSheet(
+                w["card"].setStyleSheet(
                     f"QFrame {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
                     f"stop:0 rgba(255,215,0,0.25),stop:1 {wc}30); "
                     f"border-left: 5px solid {wc}; border: 2px solid #ffd700; "
                     f"border-radius: 10px; padding: 8px; }}"
                 )
-                w['score'].setStyleSheet(
+                w["score"].setStyleSheet(
                     "font-size: 24px; font-weight: 900; color: #ffd700; "
                     "background: transparent; padding-right: 6px;"
                 )
             elif is_winner:
-                w['card'].setStyleSheet(
+                w["card"].setStyleSheet(
                     "QFrame { background: rgba(93,219,255,0.15); "
                     "border: 2px solid #5ddbff; border-radius: 10px; padding: 8px; }"
                 )
-                w['score'].setStyleSheet(
+                w["score"].setStyleSheet(
                     "font-size: 24px; font-weight: 900; color: #5ddbff; "
                     "background: transparent; padding-right: 6px;"
                 )
             else:
-                w['card'].setStyleSheet(
+                w["card"].setStyleSheet(
                     f"QFrame {{ background: rgba(30,40,55,0.9); "
-                    f"border-left: 5px solid {color}; "
-                    f"border-radius: 10px; padding: 8px; }}"
+                    f"border-left: 5px solid {color}; border-radius: 10px; padding: 8px; }}"
                 )
-                w['score'].setStyleSheet(
+                w["score"].setStyleSheet(
                     "font-size: 24px; font-weight: 900; color: #39FF14; "
                     "background: transparent; padding-right: 6px;"
                 )
@@ -321,11 +297,11 @@ class WinnerScreen(QDialog):
     # ── Trophy pulse ──────────────────────────────────────────────────────────
 
     def _animate_trophy(self):
-        if hasattr(self, 'pulse_timer') and self.pulse_timer.isActive():
-            self.pulse_timer.stop()
-        self.pulse_state = 0
+        if hasattr(self, "pulse_timer"):
+            self.pulse_timer.stop()    # FIX: always stop prior timer, not just when isActive()
+        self.pulse_state  = 0
         self._pulse_count = 0
-        self.pulse_timer = QTimer(self)
+        self.pulse_timer  = QTimer(self)
         self.pulse_timer.timeout.connect(self._pulse_trophy)
         self.pulse_timer.start(500)
 
@@ -366,5 +342,5 @@ class WinnerScreen(QDialog):
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
     def cleanup(self):
-        if hasattr(self, 'pulse_timer'):
+        if hasattr(self, "pulse_timer"):
             self.pulse_timer.stop()

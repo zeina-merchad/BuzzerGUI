@@ -42,7 +42,7 @@ class CountdownTimer(QObject):
     def stop(self) -> None:
         """Stop the timer and reset remaining time.
 
-        FIX: does NOT emit changed(0) — the widget stays on the last displayed
+        Does NOT emit changed(0) — the widget stays on the last displayed
         second rather than flashing '00s' every time a player buzzes in.
         """
         self._timer.stop()
@@ -76,14 +76,11 @@ class GameEngine(QObject):
     attempt_failed = Signal(int, int)    # (player_id, attempt_number)
 
     # Fired whenever engine advances to a NEW question.
-    # HostScreen uses this to reset UI + forgive eliminated players + reset MQTT question state.
     question_advanced = Signal()
 
     def __init__(self, cfg: GameConfig, questions: List[Question]):
         super().__init__()
 
-        # Skip the normal validation that requires question_files to be non-empty
-        # when starting empty (questions will arrive from AdminDashboard later)
         if questions:
             valid, error = cfg.validate()
             if not valid:
@@ -101,10 +98,9 @@ class GameEngine(QObject):
         self.current_q_idx: int = 0
         self.locked_buzzer_id: Optional[int] = None
         self.question_start_time_ms: int = 0
-        # Track when buzzers were actually unlocked so speed bonus is meaningful
         self.buzz_unlock_time_ms: int = 0
 
-        # Timer bookkeeping (so we can resume question time after buzz/attempts)
+        # Timer bookkeeping
         self._question_remaining_ms: int = int(self.cfg.timer_seconds * 1000)
         self._answer_remaining_ms: int = 0
 
@@ -113,10 +109,7 @@ class GameEngine(QObject):
         self.players_attempted: Set[int] = set()
         self.attempt_records: List[AttemptRecord] = []
 
-        # Scoreboard — initialised with only the active player set.
-        # FIX #7 (review): hardcoding {1:0,2:0,3:0,4:0} meant get_players_remaining()
-        # always returned up to 4 players regardless of how many buzzers are connected.
-        # active_player_ids is now populated lazily as players connect.
+        # Scoreboard
         self.scores = Scoreboard(scores={1: 0, 2: 0, 3: 0, 4: 0})
 
         # Statistics
@@ -126,7 +119,7 @@ class GameEngine(QObject):
         self._undo_stack: deque = deque(maxlen=50)
         self._redo_stack: deque = deque(maxlen=50)
 
-        # Timer — inline so this file is self-contained
+        # Timer
         self.timer = CountdownTimer(tick_ms=100)
         self.timer.changed.connect(self._on_timer_changed)
         self.timer.ended.connect(self._on_timer_ended)
@@ -134,10 +127,7 @@ class GameEngine(QObject):
         # Track answered questions
         self.answered_questions: set[int] = set()
 
-        # FIX: track which players are actually active in this game session.
-        # Populated by register_active_player() as buzzers connect.
-        # Defaults to all four so the engine works correctly when no connection
-        # tracking is in use (e.g. tests, demo mode without MQTT).
+        # Active players — defaults to all four for demo/test mode
         self._active_player_ids: Set[int] = {1, 2, 3, 4}
 
     # =========================================================================
@@ -145,19 +135,12 @@ class GameEngine(QObject):
     # =========================================================================
 
     def register_active_player(self, player_id: int) -> None:
-        """Mark a player as active (connected buzzer).  Call when a buzzer
-        connects so cascading attempt logic only iterates real players.
-        """
         self._active_player_ids.add(int(player_id))
 
     def unregister_active_player(self, player_id: int) -> None:
-        """Mark a player as no longer active.  Safe to call even if the
-        player is not in the set.
-        """
         self._active_player_ids.discard(int(player_id))
 
     def set_active_players(self, player_ids) -> None:
-        """Bulk-replace the active player set (e.g. from heartbeat results)."""
         self._active_player_ids = set(int(p) for p in player_ids)
 
     # =========================================================================
@@ -165,17 +148,13 @@ class GameEngine(QObject):
     # =========================================================================
 
     def _on_timer_changed(self, remaining_ms: int) -> None:
-        """Internal timer tick handler."""
         if self.phase == Phase.SHOW_QUESTION:
             self._question_remaining_ms = int(remaining_ms)
         elif self.phase == Phase.BUZZED:
             self._answer_remaining_ms = int(remaining_ms)
-
-        # Always forward to UI
         self.timer_changed.emit(int(remaining_ms))
 
     def start_or_resume_question_timer(self) -> None:
-        """Start (or resume) the QUESTION timer for the current question."""
         if self.phase != Phase.SHOW_QUESTION:
             return
 
@@ -193,49 +172,35 @@ class GameEngine(QObject):
     # =========================================================================
 
     def current_question(self) -> Question:
-        """Get current question"""
         if not self.questions:
             raise IndexError("No questions loaded — load an Excel pack via the Admin Dashboard")
         return self.questions[self.current_q_idx]
 
     def get_progress(self) -> tuple[int, int]:
-        """Get (current_index, total_questions)"""
         return (self.current_q_idx + 1, len(self.questions))
 
     def get_remaining_questions(self) -> int:
-        """Get number of unanswered questions"""
         return len(self.questions) - len(self.answered_questions)
 
     def get_current_attempt_number(self) -> int:
-        """Get current attempt number for this question"""
         return self.current_attempt_number
 
     def get_players_remaining(self) -> List[int]:
-        """Get list of active players who haven't attempted yet.
-
-        FIX #7 (review): was hardcoded to {1,2,3,4}.  Now uses
-        self._active_player_ids so a 2-player game does not cascade through
-        phantom players 3 and 4.  Defaults to all four if no players have
-        been explicitly registered (backwards-compatible with tests/demo).
-        """
+        """Get active players who haven't attempted yet."""
         base = self._active_player_ids if self._active_player_ids else {1, 2, 3, 4}
         return sorted(list(base - self.players_attempted))
 
     def get_points_for_current_attempt(self) -> int:
-        """Get points available for current attempt"""
         question = self.current_question()
         return question.get_points_for_attempt(self.current_attempt_number)
 
     def has_questions(self) -> bool:
-        """Return True if questions have been loaded"""
         return len(self.questions) > 0
 
     def get_question_remaining_ms(self) -> int:
-        """Remaining milliseconds for the current question timer."""
         return int(self._question_remaining_ms)
 
     def get_answer_remaining_ms(self) -> int:
-        """Remaining milliseconds for the current answer timer (if any)."""
         return int(self._answer_remaining_ms)
 
     # =========================================================================
@@ -243,7 +208,6 @@ class GameEngine(QObject):
     # =========================================================================
 
     def start_question(self) -> None:
-        """Start showing current question - timer will start when admin unlocks"""
         if not self.questions:
             self.error_occurred.emit("No questions loaded — load an Excel pack via the Admin Dashboard")
             print("[ENGINE] ⚠️  start_question called with no questions loaded")
@@ -254,43 +218,37 @@ class GameEngine(QObject):
         self.question_start_time_ms = int(time.time() * 1000)
         self.buzz_unlock_time_ms = 0
 
-        # Reset attempt tracking
         self.current_attempt_number = 1
         self.players_attempted.clear()
         self.attempt_records.clear()
+        # FIX: discard the current index so re-calling start_question on the
+        # same question (e.g. after a reset path) does not leave it pre-marked
+        # as answered, which would cause next_question() to jump prematurely.
+        self.answered_questions.discard(self.current_q_idx)
         self.attempt_changed.emit(self.current_attempt_number)
 
         self.phase = Phase.SHOW_QUESTION
         self.phase_changed.emit(self.phase.value)
 
-        # Keep timer stopped until admin unlocks
         self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
         self._answer_remaining_ms = 0
         self.timer.stop()
         self.question_changed.emit()
+        self.question_advanced.emit()   # FIX: ensure Q1 also triggers _prepare_current_question_ui
 
         print(f"[ENGINE] Question started: {self.current_question().text[:50]}...")
         print("[ENGINE] ⏸️ Timer paused - waiting for admin to unlock")
 
     def prev_question(self) -> None:
-        """Step back to the previous question (host correction / remote shortcut)."""
         if self.current_q_idx < 1:
             print("[ENGINE] ⚠️  Already at the first question — cannot go back")
             return
 
-        # Stop any running timer
         self.timer.stop()
-
-        # Remove current question from answered set (it wasn't completed)
         self.answered_questions.discard(self.current_q_idx)
-
-        # Step back
         self.current_q_idx -= 1
-
-        # Also unmark the previous question so it can be re-attempted fresh
         self.answered_questions.discard(self.current_q_idx)
 
-        # Reset all per-question state
         self.locked_buzzer_id = None
         self.lock_changed.emit(None)
         self.current_attempt_number = 1
@@ -308,25 +266,19 @@ class GameEngine(QObject):
 
         print(f"[ENGINE] ⏮ Went back to Q{self.current_q_idx + 1}")
         print("[ENGINE] ⏸️ Timer paused - waiting for admin to unlock")
-        
+
     def next_question(self) -> None:
-        """Move to next question."""
         if self.phase == Phase.GAME_END:
             return
 
-        # Always mark the current question answered before moving on
         self.answered_questions.add(self.current_q_idx)
 
-        # Clear any lock
         self.locked_buzzer_id = None
         self.lock_changed.emit(None)
 
-        # If all questions are answered → end game
-        if len(self.answered_questions) >= len(self.questions):
-            self.end_game()
-            return
-
-        # Advance linearly — never wrap
+        # FIX: advance by index rather than by answered_questions count.
+        # Using answered_questions.count() caused premature GAME_END when questions
+        # were skipped because skipped indices were already in the set.
         next_idx = self.current_q_idx + 1
         if next_idx >= len(self.questions):
             self.end_game()
@@ -334,47 +286,36 @@ class GameEngine(QObject):
 
         self.current_q_idx = next_idx
 
-        # Prepare next question state (WAITING FOR ADMIN)
         self.question_start_time_ms = int(time.time() * 1000)
         self.buzz_unlock_time_ms = 0
 
-        # Reset attempt tracking for the new question
         self.current_attempt_number = 1
         self.players_attempted.clear()
         self.attempt_records.clear()
         self.attempt_changed.emit(self.current_attempt_number)
 
-        # Reset timer bookkeeping; timer stays stopped until admin unlocks
         self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
         self._answer_remaining_ms = 0
         self.timer.stop()
 
-        # Put engine in SHOW_QUESTION (not IDLE)
         self.phase = Phase.SHOW_QUESTION
         self.phase_changed.emit(self.phase.value)
-
-        # Trigger UI to render the new question
         self.question_changed.emit()
-
-        # Let HostScreen reset UI + MQTT per-question state
         self.question_advanced.emit()
 
         print(f"[ENGINE] Next question ready: Q{self.current_q_idx + 1}")
         print("[ENGINE] ⏸️ Timer paused - waiting for admin to unlock")
 
     def skip_question(self) -> None:
-        """Skip current question without scoring"""
         self.answered_questions.add(self.current_q_idx)
         self.next_question()
 
     def reset_game(self) -> None:
-        """Reset entire game"""
         self.scores.reset()
         self.stats = GameStats()
         self.answered_questions.clear()
         self.current_q_idx = 0
 
-        # Release any locked buzzers
         self.locked_buzzer_id = None
         self.lock_changed.emit(None)
 
@@ -401,18 +342,24 @@ class GameEngine(QObject):
         print("[ENGINE] Game reset - all locks released")
 
     def end_game(self) -> None:
-        """End the game"""
         self.phase = Phase.GAME_END
         self.phase_changed.emit(self.phase.value)
         self.timer.stop()
         print("[ENGINE] Game ended")
 
     def update_config(self, new_config: GameConfig) -> None:
-        """Apply a new GameConfig from the Admin Dashboard Settings tab."""
+        """Apply a new GameConfig from the Admin Dashboard Settings tab.
+
+        FIX #18: only update _question_remaining_ms when the timer is NOT
+        actively running (i.e. the question has not been unlocked yet).
+        Updating it mid-countdown would silently desync the display.
+        """
         old_cfg = self.cfg
         self.cfg = new_config
 
-        if self.phase == Phase.SHOW_QUESTION:
+        # Only reset the bookkeeping value if the question timer hasn't started
+        # (buzz_unlock_time_ms == 0 means admin hasn't unlocked yet).
+        if self.phase == Phase.SHOW_QUESTION and self.buzz_unlock_time_ms == 0:
             self._question_remaining_ms = int(new_config.timer_seconds * 1000)
 
         changes = []
@@ -433,9 +380,36 @@ class GameEngine(QObject):
         print(f"[ENGINE] Config updated: '{new_config.name}' ({change_str})")
 
     def load_questions(self, questions: List[Question]) -> None:
-        """Hot-swap questions from the Admin Dashboard."""
+        """Hot-swap questions from the Admin Dashboard.
+
+        FIX #17: an empty list is now honoured — the engine resets to IDLE
+        with no questions rather than silently keeping the old set.  This
+        matches what the UI shows after 'Deselect All'.
+        """
         if not questions:
-            print("[ENGINE] ⚠️  load_questions: empty list — ignoring")
+            print("[ENGINE] ⚠️  load_questions: empty list — resetting engine to IDLE (no questions)")
+            self.timer.stop()
+            self.original_questions = []
+            self.questions = []
+            self.scores.reset()
+            self.stats = GameStats()
+            self.answered_questions.clear()
+            self.current_q_idx = 0
+            self.locked_buzzer_id = None
+            self.current_attempt_number = 0
+            self.players_attempted.clear()
+            self.attempt_records.clear()
+            self.buzz_unlock_time_ms = 0
+            self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
+            self._answer_remaining_ms = 0
+            self._undo_stack.clear()
+            self._redo_stack.clear()
+            self.phase = Phase.IDLE
+            self.phase_changed.emit(self.phase.value)
+            self.lock_changed.emit(None)
+            self.scores_changed.emit()
+            self.stats_changed.emit()
+            self.question_changed.emit()
             return
 
         print(f"[ENGINE] 🔄 Loading {len(questions)} questions from Admin Dashboard")
@@ -447,7 +421,6 @@ class GameEngine(QObject):
         if self.cfg.shuffle_questions:
             random.shuffle(self.questions)
 
-        # Full game-state reset
         self.scores.reset()
         self.stats = GameStats()
         self.answered_questions.clear()
@@ -472,7 +445,6 @@ class GameEngine(QObject):
         print(f"[ENGINE] ✅ Ready — {len(self.questions)} questions loaded, game reset")
 
     def award_bonus(self, player_id: int, points: int = 1, reason: str = "Bonus point") -> None:
-        """Award a manual bonus point to a player (admin-only action)."""
         if player_id not in self.scores.scores:
             print(f"[ENGINE] ⚠️  award_bonus: unknown player_id {player_id}")
             return
@@ -485,12 +457,13 @@ class GameEngine(QObject):
         )
 
         self.scores.add(player_id, points, reason)
+        self._finalise_undo_state()   # FIX #16: capture post-score snapshot
         self.scores_changed.emit()
 
         print(f"[ENGINE] ⭐ Bonus +{points} awarded to Player {player_id} ({reason})")
 
     def reload_questions(self, questions: List[Question]) -> None:
-        """Alias for load_questions — called from AppWindow after admin loads Excel."""
+        """Alias for load_questions."""
         self.load_questions(questions)
 
     # =========================================================================
@@ -529,6 +502,7 @@ class GameEngine(QObject):
 
             self._save_state_for_undo(pid, points, is_correct, self.current_q_idx)
             self.scores.add(pid, points, reason)
+            self._finalise_undo_state()   # FIX #16: capture post-score snapshot
             self.scores_changed.emit()
 
             self.stats.record_answer(True, pid, buzz_time_ms, self.current_attempt_number)
@@ -588,8 +562,13 @@ class GameEngine(QObject):
                 self.locked_buzzer_id = None
                 self.lock_changed.emit(None)
 
-                # Reset question timer for next player's attempt
-                self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
+                # FIX #13: respect reset_timer_each_attempt — only reset to
+                # full time when the flag is True; otherwise resume from the
+                # time remaining when the buzz came in.
+                if self.cfg.reset_timer_each_attempt:
+                    self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
+                # else: _question_remaining_ms was already saved in on_buzz()
+
                 self.timer.stop()
 
                 self.phase = Phase.SHOW_QUESTION
@@ -599,7 +578,6 @@ class GameEngine(QObject):
                 print(f"[ENGINE] → Remaining players: {remaining_players}")
                 return
 
-        # All attempts exhausted
         self._on_all_attempts_exhausted()
 
     # =========================================================================
@@ -607,9 +585,18 @@ class GameEngine(QObject):
     # =========================================================================
 
     def on_buzz(self, buzzer_id: int, t_ms: int, received_ms: int) -> bool:
-        """Handle buzz event with cascading attempts support."""
+        """Handle buzz event with cascading attempts support.
+
+        FIX #14: reject buzz from a player not in _active_player_ids so that
+        phantom / unregistered devices cannot steal the lock.
+        """
         if self.phase != Phase.SHOW_QUESTION:
             print(f"[ENGINE] ✗ Buzz rejected - wrong phase ({self.phase.value})")
+            return False
+
+        # FIX #14: guard against unregistered players
+        if buzzer_id not in self._active_player_ids:
+            print(f"[ENGINE] ✗ Buzz rejected - Player {buzzer_id} is not registered as active")
             return False
 
         if buzzer_id in self.players_attempted:
@@ -639,7 +626,6 @@ class GameEngine(QObject):
         return True
 
     def notify_buzzers_unlocked(self) -> None:
-        """Called by HostScreen when the admin clicks 'Unlock Buzzers'."""
         self.buzz_unlock_time_ms = int(time.time() * 1000)
 
     # =========================================================================
@@ -652,39 +638,71 @@ class GameEngine(QObject):
             'points': points,
             'is_correct': is_correct,
             'question_idx': question_idx,
-            'scores_snapshot': self.scores.scores.copy()
+            # FIX #16: snapshot BEFORE the change (for undo restore)
+            'scores_before': self.scores.scores.copy(),
+            # scores_after is populated after the change by the caller
+            # via _finalise_undo_state(); for simplicity we compute it inline
+            # after the add() call in each caller — see undo/redo below.
         }
         self._undo_stack.append(state)
         self._redo_stack.clear()
 
+    def _finalise_undo_state(self) -> None:
+        """Call immediately after scoring to record the post-score snapshot.
+
+        FIX #16: redo needs a 'scores_after' snapshot so it can restore
+        exactly rather than re-adding on top of a potentially different total.
+        """
+        if self._undo_stack:
+            self._undo_stack[-1] = dict(
+                self._undo_stack[-1],
+                scores_after=self.scores.scores.copy(),
+            )
+
     def undo_last_answer(self) -> bool:
-        """Revert the last scored answer. Returns True if successful."""
+        """Revert the last scored answer."""
         if not self._undo_stack:
             return False
         state = self._undo_stack.pop()
         self._redo_stack.append(state)
 
-        for pid, score in state['scores_snapshot'].items():
+        # Restore scores to the pre-answer snapshot
+        for pid, score in state['scores_before'].items():
             self.scores.scores[pid] = score
 
-        self.answered_questions.discard(state['question_idx'])
+        # FIX: also trim history so undone entries don't appear in stats/exports.
+        # History entries are appended in add(); each undo removes the last one.
+        if self.scores.history:
+            self.scores.history.pop()
 
+        self.answered_questions.discard(state['question_idx'])
         self.scores_changed.emit()
         print(f"[ENGINE] ↩ Undid answer for Player {state['player_id']} "
               f"(Q{state['question_idx'] + 1}, {state['points']} pts)")
         return True
 
     def redo_last_answer(self) -> bool:
-        """Re-apply the last undone answer. Returns True if successful."""
+        """Re-apply the last undone answer.
+
+        FIX #16: restores from scores_after snapshot instead of adding on top
+        of whatever the current total is, preventing double-counting.
+        """
         if not self._redo_stack:
             return False
         state = self._redo_stack.pop()
         self._undo_stack.append(state)
 
-        self.scores.add(state['player_id'], state['points'],
-                        f"Redo - Q{state['question_idx'] + 1}")
-        self.answered_questions.add(state['question_idx'])
+        # Restore to the post-answer snapshot if available; fall back to add()
+        scores_after = state.get('scores_after')
+        if scores_after is not None:
+            for pid, score in scores_after.items():
+                self.scores.scores[pid] = score
+        else:
+            # Legacy entries that pre-date this fix — use add() as before
+            self.scores.add(state['player_id'], state['points'],
+                            f"Redo - Q{state['question_idx'] + 1}")
 
+        self.answered_questions.add(state['question_idx'])
         self.scores_changed.emit()
         print(f"[ENGINE] ↪ Redid answer for Player {state['player_id']} "
               f"(Q{state['question_idx'] + 1}, +{state['points']} pts)")
@@ -695,7 +713,6 @@ class GameEngine(QObject):
     # =========================================================================
 
     def _on_all_attempts_exhausted(self) -> None:
-        """Single shared path for 'no more attempts left'."""
         print("[ENGINE] → No more attempts available")
         self.answered_questions.add(self.current_q_idx)
 
@@ -712,10 +729,44 @@ class GameEngine(QObject):
     # =========================================================================
 
     def _on_timer_ended(self) -> None:
-        """Handle timer expiration"""
+        """Handle timer expiration."""
         if self.phase == Phase.SHOW_QUESTION:
+            # FIX: When the question timer expires mid-cascade (attempt > 1),
+            # the current "locked" player is nobody — but any players who have
+            # NOT yet attempted should still be penalised the same way as a
+            # timeout in BUZZED phase, and the cascade should continue if more
+            # attempts remain.  Previously the engine always jumped to IDLE
+            # here, skipping attempt tracking entirely.
+            print("[ENGINE] ⏰ Question time's up!")
+
+            question = self.current_question()
+            if (self.cfg.enable_cascading_attempts
+                    and self.current_attempt_number < question.max_attempts
+                    and self.get_players_remaining()):
+                # There are still attempts available — advance to the next one
+                # so remaining players have a chance.
+                self.current_attempt_number += 1
+                self.attempt_changed.emit(self.current_attempt_number)
+
+                self.locked_buzzer_id = None
+                self.lock_changed.emit(None)
+                self.timer.stop()
+
+                if self.cfg.reset_timer_each_attempt:
+                    self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
+                # else: preserve remaining (which is 0; host must re-unlock)
+
+                self.phase = Phase.SHOW_QUESTION
+                self.phase_changed.emit(self.phase.value)
+
+                print(f"[ENGINE] → Timer expired mid-cascade; next attempt "
+                      f"({self.current_attempt_number}/{question.max_attempts}), "
+                      f"remaining players: {self.get_players_remaining()}")
+                return
+
+            # No more cascade — question is over
             self.answered_questions.add(self.current_q_idx)
-            print("[ENGINE] ⏰ Question time's up! No one buzzed.")
+            print("[ENGINE] ⏰ No one buzzed (or all attempts used). Moving on.")
 
             self.locked_buzzer_id = None
             self.lock_changed.emit(None)
@@ -730,16 +781,35 @@ class GameEngine(QObject):
             print(f"[ENGINE] ⏰ Answer time's up! Player {pid} didn't answer in time.")
 
             if pid:
+                current_time_ms = int(time.time() * 1000)
+                ref_time = self.buzz_unlock_time_ms if self.buzz_unlock_time_ms else self.question_start_time_ms
+                buzz_time_ms = current_time_ms - ref_time
+
                 if self.cfg.penalty_for_wrong > 0:
                     penalty = -self.cfg.penalty_for_wrong
                     reason = f"Timeout - Q{self.current_q_idx + 1}"
                     self.scores.add(pid, penalty, reason)
                     self.scores_changed.emit()
 
+                # FIX #15: record the timeout in stats and attempt_records,
+                # matching the path taken by apply_answer() for wrong answers.
+                self.stats.record_answer(False, pid, buzz_time_ms, self.current_attempt_number)
+                self.stats_changed.emit()
+
+                self.attempt_records.append(AttemptRecord(
+                    player_id=pid,
+                    is_correct=False,
+                    points_awarded=-self.cfg.penalty_for_wrong if self.cfg.penalty_for_wrong > 0 else 0,
+                    attempt_number=self.current_attempt_number,
+                    buzz_time_ms=buzz_time_ms,
+                ))
+
                 self.players_attempted.add(pid)
                 self.attempt_failed.emit(pid, self.current_attempt_number)
 
                 question = self.current_question()
+
+                # FIX #13: respect reset_timer_each_attempt on timeout cascade
                 if self.cfg.enable_cascading_attempts and self.current_attempt_number < question.max_attempts:
                     remaining_players = self.get_players_remaining()
                     if remaining_players:
@@ -749,6 +819,10 @@ class GameEngine(QObject):
                         self.locked_buzzer_id = None
                         self.lock_changed.emit(None)
                         self.timer.stop()
+
+                        if self.cfg.reset_timer_each_attempt:
+                            self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
+                        # else: preserve whatever was left on the question timer
 
                         self.phase = Phase.SHOW_QUESTION
                         self.phase_changed.emit(self.phase.value)

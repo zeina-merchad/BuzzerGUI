@@ -105,7 +105,14 @@ class OptionsView(QWidget):
         )
 
     def mark_option_correct(self, answer: str):
-        """Highlight the correct answer in green."""
+        """Highlight the correct answer in green.
+
+        Deliberately does NOT call reset_eliminated() first — this preserves
+        the red strikethrough on wrong answers already shown during cascading
+        attempts, so the audience can see both which answers were wrong *and*
+        which was right.  If you want to clear wrong answers before revealing
+        correct, call reset_eliminated() then mark_option_correct().
+        """
         answer_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
         if answer not in answer_map:
             return

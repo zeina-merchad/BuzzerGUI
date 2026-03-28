@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QMessageBox, QFrame, QGridLayout, QDialog
 )
-import sys,os
+import sys, os
 from app.core.engine import GameEngine
 from app.core.state import Phase
 from app.hardware.mqtt_buzzer import MQTTBuzzerBackend
@@ -68,8 +68,8 @@ class RemoteKeyHandler:
         elif action == "next_question":
             if self.btn_next.isVisible() and self.btn_next.isEnabled():
                 self._load_next_question()
-        
-        elif action == "prev_question":                          # ← add this block
+
+        elif action == "prev_question":
             if self.game_started:
                 self._load_prev_question()
 
@@ -109,7 +109,6 @@ class FlashOverlay(QLabel):
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.setWordWrap(True)
         self.hide()
-        # FIX: cancellable timer so overlapping flashes don't collide
         self._flash_timer = QTimer(self)
         self._flash_timer.setSingleShot(True)
         self._flash_timer.timeout.connect(self.hide)
@@ -120,7 +119,6 @@ class FlashOverlay(QLabel):
             self.setGeometry(self.parentWidget().rect())
 
     def flash_green(self, text: str = "✅ CORRECT!", ms: int = 650):
-        # FIX: stop any pending hide-timer before starting a new flash
         self._flash_timer.stop()
         self.setText(text)
         self.resize_to_parent()
@@ -211,7 +209,6 @@ class CornerPlayerCard(QFrame):
         self.icon.setText(str(self._score))
 
     def _set_connected_icon(self):
-        # Solid team color — matches the label bar underneath
         self.icon.setStyleSheet(self._icon_style(
             bg=self.color,
             border="none",
@@ -221,7 +218,6 @@ class CornerPlayerCard(QFrame):
         self.icon.setText(str(self._score))
 
     def _set_buzzed_icon(self):
-        # Full solid team color, brighter — same color as label
         self.icon.setStyleSheet(self._icon_style(
             bg=self.color,
             border="none",
@@ -294,8 +290,12 @@ class CornerPlayerCard(QFrame):
         if locked:
             self._set_buzzed_icon()
         else:
-            # Always back to grey after buzz resolves — color only on buzz
-            self._set_disconnected_icon()
+            # FIX #2: restore to the correct visual state based on connection
+            # status instead of always going grey after a buzz resolves.
+            if self.is_hardware_connected:
+                self._set_connected_icon()
+            else:
+                self._set_disconnected_icon()
         self.set_score(self._score)
 
 
@@ -311,8 +311,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.buzzers_unlocked = False
         self.current_round = 1
 
-        # FIX #2: track whether a heartbeat round is in progress so we don't
-        # stack multiple concurrent heartbeat/poll chains.
         self._heartbeat_in_progress = False
         self._round_transition_ping_pending = False
 
@@ -332,16 +330,10 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self._warned_7 = False
         self._warned_3 = False
 
-        # ── Build UI ─────────────────────────────────────────────────────────
         self._build_ui()
-
-        # ── Connect engine signals ────────────────────────────────────────────
         self._connect_engine_signals()
-
-        # ── Connect MQTT callbacks ────────────────────────────────────────────
         self._connect_mqtt_callbacks()
 
-        # ── Passive connection poll (no blocking I/O) ─────────────────────────
         self.connection_timer = QTimer()
         self.connection_timer.timeout.connect(self._update_connection_status)
         self.connection_timer.start(2000)
@@ -349,7 +341,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self._render_scores()
 
     # =========================================================================
-    # UI CONSTRUCTION (split out from __init__ for readability — Fix #11)
+    # UI CONSTRUCTION
     # =========================================================================
 
     def _build_ui(self):
@@ -362,8 +354,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         game_grid.setVerticalSpacing(15)
 
         self.player_cards = {}
-
-        # Create logo early so _build_player_columns can place it
         self._create_logo_label()
 
         left_column, right_column = self._build_player_columns()
@@ -380,7 +370,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         root.addLayout(game_grid, stretch=1)
         root.addWidget(self._build_control_panel())
 
-        # Flash overlay (on top of everything)
         self.correct_flash = FlashOverlay(self)
         self.correct_flash.hide()
 
@@ -394,8 +383,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.logo_label.setStyleSheet("QLabel { background: transparent; border: none; }")
 
     def _build_player_columns(self):
-        """Build left (P1, cascading, P3) and right (P2, P4) columns."""
-        # Left column
         left_column = QWidget()
         left_column.setStyleSheet("QWidget { background: transparent; }")
         left_layout = QVBoxLayout(left_column)
@@ -413,7 +400,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.player_cards[3] = CornerPlayerCard(3)
         left_layout.addWidget(self.player_cards[3], alignment=Qt.AlignCenter)
 
-        # Right column
         right_column = QWidget()
         right_column.setStyleSheet("QWidget { background: transparent; }")
         right_layout = QVBoxLayout(right_column)
@@ -432,7 +418,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         return left_column, right_column
 
     def _build_center_area(self):
-        """Build the center column: timer, round badge, media, question, options."""
         center_widget = QWidget()
         center_widget.setStyleSheet("QWidget { background: transparent; }")
         center_widget.setMaximumWidth(1000)
@@ -440,7 +425,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         center_layout.setSpacing(15)
         center_layout.setContentsMargins(60, 0, 60, 0)
 
-        # Timer + round badge in a horizontal row
         timer_row = QWidget()
         timer_row.setStyleSheet("QWidget { background: transparent; }")
         timer_row_layout = QHBoxLayout(timer_row)
@@ -450,7 +434,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.timer = TimerWidget()
         timer_row_layout.addWidget(self.timer, alignment=Qt.AlignVCenter)
 
-        # FIX: round badge — visible only during multi-round games
         self.round_badge = QLabel("ROUND 1")
         self.round_badge.setAlignment(Qt.AlignCenter)
         self.round_badge.setStyleSheet(
@@ -459,10 +442,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
             "border: 2px solid #ffd700; border-radius: 10px; "
             "padding: 8px 18px; letter-spacing: 2px;"
         )
-        self.round_badge.hide()  # shown only when cfg.rounds > 1
+        self.round_badge.hide()
         timer_row_layout.addWidget(self.round_badge, alignment=Qt.AlignVCenter)
         timer_row_layout.addStretch()
-
 
         center_layout.addWidget(timer_row, alignment=Qt.AlignCenter)
 
@@ -486,7 +468,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         return center_widget
 
     def _build_control_panel(self):
-        """Build the bottom control bar."""
         control_panel = QFrame()
         control_panel.setStyleSheet(
             "QFrame { "
@@ -521,8 +502,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
             "}"
         )
 
-        # FIX #12: renamed from self.phase to self.phase_label to avoid
-        # collision with engine.phase attribute.
         self.phase_label = QLabel("PHASE: IDLE")
         self.phase_label.setStyleSheet(
             "font-size: 14px; font-weight: 900; color: white; "
@@ -642,8 +621,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         control_layout.addWidget(self.help_btn)
 
         return control_panel
-    
-
 
     def resource_path(self, rel: str) -> str:
         if getattr(sys, 'frozen', False):
@@ -657,7 +634,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
                 return path
             return os.path.join(internal, rel)
         else:
-            # Go up 3 levels: screens -> ui -> app -> project root
             root = os.path.dirname(os.path.abspath(__file__))
             root = os.path.dirname(root)  # ui
             root = os.path.dirname(root)  # app
@@ -678,7 +654,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.engine.question_advanced.connect(self._on_engine_question_advanced)
 
     def _grey_out_all_cards(self):
-        """Set all player cards to disconnected/grey state between questions."""
         for card in self.player_cards.values():
             card.is_hardware_connected = False
             card.is_buzzed = False
@@ -688,12 +663,10 @@ class HostScreen(RemoteKeyHandler, QWidget):
             card.label.setStyleSheet(card._label_style("rgba(100, 100, 100, 0.7)"))
 
     def _on_timer_changed_ui(self, remaining_ms: int):
-        """Only update the timer widget when question timer is running.
-        Ignore ticks from the answer timer (Phase.BUZZED) so the widget
-        does not jump to 8s and count down while a player is answering.
-        """
-        if self.engine.phase == Phase.BUZZED:
-            return
+        # Update the timer widget for both question timer AND answer countdown.
+        # Previously bailed out during BUZZED, leaving the widget frozen while
+        # the answer clock ran down.  The SFX helper is connected separately
+        # and already fires correctly for both phases.
         self.timer.set_remaining_ms(remaining_ms)
 
     def _connect_mqtt_callbacks(self):
@@ -704,9 +677,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.mqtt_backend.on_player_connected_callback = self._on_player_connected
         self.mqtt_backend.on_player_disconnected_callback = self._on_player_disconnected
 
-        # FIX #2: use the signal-based heartbeat resolution instead of polling.
-        # bridge.heartbeat_resolved fires on the main thread when all pongs are in
-        # (or the timeout fires), replacing the QTimer.singleShot chain entirely.
         self.mqtt_backend.bridge.heartbeat_resolved.connect(
             self._apply_heartbeat_results, Qt.QueuedConnection
         )
@@ -730,7 +700,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
     # =========================================================================
 
     def _start_game(self):
-        # Guard: refuse to start if no questions are loaded
         q_list = getattr(self.engine, "questions", None) or getattr(self.engine, "_questions", None)
         if not q_list:
             QMessageBox.warning(
@@ -757,7 +726,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.btn_next.show()
         self.status_label.show()
 
-        # Show round badge if this is a multi-round game
         self._update_round_badge()
 
         self.engine.start_question()
@@ -766,7 +734,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         print("🎮 GAME STARTED (Q1)!")
 
     def _update_round_badge(self):
-        """Update the round badge label and show/hide based on game config."""
         if self.engine.cfg.rounds > 1:
             self.round_badge.setText(f"ROUND {self.current_round} / {self.engine.cfg.rounds}")
             self.round_badge.show()
@@ -774,7 +741,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.round_badge.hide()
 
     def _load_prev_question(self):
-        """Step back to the previous question (remote control / host correction)."""
         if not self.game_started:
             return
         if self.engine.current_q_idx < 1:
@@ -782,7 +748,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
             return
         self.engine.prev_question()
         self._prepare_current_question_ui()
-        
+
     def _load_next_question(self):
         if not self.game_started:
             return
@@ -791,15 +757,16 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self._show_winner_screen()
             return
 
-        # FIX A: evaluate round boundary using the index AFTER advancing
-        # (current_q_idx + 1 is the 1-based count of questions answered so far,
-        # which is what we want to compare against questions_per_round).
         if self.engine.cfg.rounds > 1:
             qpr = self.engine.cfg.questions_per_round
-            # current_q_idx is 0-based; questions answered so far = current_q_idx + 1
+            # current_q_idx is 0-based and already points at the CURRENT (just-completed)
+            # question.  questions_answered = current_q_idx + 1 (1-based).
+            # The round boundary fires when we have just finished the last question
+            # of a round, i.e. questions_answered is an exact multiple of qpr AND
+            # we are not yet at the very last question of the game (which ends the game).
             questions_answered = self.engine.current_q_idx + 1
-
-            if questions_answered % qpr == 0:
+            if (questions_answered % qpr == 0 and
+                    questions_answered < len(self.engine.questions)):
                 round_just_completed = questions_answered // qpr
                 if round_just_completed < self.engine.cfg.rounds:
                     self._show_round_transition(round_just_completed, round_just_completed + 1)
@@ -808,7 +775,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.engine.next_question()
 
     def _unlock_buzzers(self):
-        """Manually unlock buzzers to accept input."""
         if self.engine.phase != Phase.SHOW_QUESTION:
             return
 
@@ -817,13 +783,14 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         self.buzzers_unlocked = True
 
-        # Mark connected players as ready — keep grey circle, update label only
         connected = self.mqtt_backend.get_connected_players(timeout_seconds=60) if self.mqtt_backend else []
         for pid, card in self.player_cards.items():
             if pid in connected:
                 card.is_hardware_connected = True
-                card.label.setText(f"P{pid}: READY")
-                card.label.setStyleSheet(card._label_style(card.color))
+                # Label → READY; icon stays grey — only lights up on actual buzz.
+                if not card.is_buzzed and not card.is_eliminated:
+                    card.label.setText(f"P{pid}: READY")
+                    card.label.setStyleSheet(card._label_style(card.color))
 
         self.btn_unlock.setText("✅ BUZZERS ACTIVE")
         self.btn_unlock.setStyleSheet(
@@ -866,28 +833,28 @@ class HostScreen(RemoteKeyHandler, QWidget):
         if reply != QMessageBox.Yes:
             return
 
-        # FIX B: dismiss overlay dialogs if open
         if self.round_transition_screen.isVisible():
-            self.round_transition_screen.cleanup()
-            self.round_transition_screen.hide()
-            self.round_transition_screen.setWindowOpacity(1.0)
+            self.round_transition_screen.fade_out(duration_ms=0)
+        self.round_transition_screen.cleanup()
+        self.round_transition_screen.hide()
+        self.round_transition_screen.setWindowOpacity(1.0)
+
         if self.winner_screen.isVisible():
-            self.winner_screen.cleanup()
-            self.winner_screen.hide()
-            self.winner_screen.setWindowOpacity(1.0)
+            self.winner_screen.fade_out(duration_ms=0)
+        self.winner_screen.cleanup()
+        self.winner_screen.hide()
+        self.winner_screen.setWindowOpacity(1.0)
 
         self.game_started = False
         self.buzzers_unlocked = False
         self.current_round = 1
         self._heartbeat_in_progress = False
-        self._round_transition_ping_pending = False  # FIX F
+        self._round_transition_ping_pending = False
 
         self.engine.reset_game()
 
         if self.mqtt_backend:
             self.mqtt_backend.end_question()
-            # FIX #8: removed the duplicate private _publish_reset() call that
-            # was redundant — end_question() already calls it internally.
             print("[RESET] Released all buzzer locks via MQTT")
 
         self.btn_start_game.setEnabled(True)
@@ -916,7 +883,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
     # =========================================================================
 
     def _on_phase(self, phase: str):
-        # FIX #12: use self.phase_label, not self.phase
         self.phase_label.setText(f"PHASE: {phase}")
 
         if phase == Phase.GAME_END.value:
@@ -925,40 +891,30 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         elif phase == Phase.SHOW_QUESTION.value:
             if self.game_started:
-                # FIX D: disable NEXT while a question is in progress so the
-                # host cannot accidentally skip past a cascade back to SHOW_QUESTION.
-                # NEXT is re-enabled when we reach IDLE or all attempts exhausted.
                 self.btn_next.setEnabled(False)
                 self.btn_next.setText("▶️ NEXT QUESTION")
 
         elif phase == Phase.BUZZED.value:
             if self.game_started:
-                # Someone buzzed — disable both buttons while waiting for answer
                 self.btn_unlock.setEnabled(False)
                 self.btn_next.setEnabled(False)
 
         elif phase == Phase.IDLE.value:
             if self.game_started:
-                # FIX #1: distinguish IDLE reasons correctly.
-                # - If players_attempted is empty AND the question is now in
-                #   answered_questions, the timer expired with no buzz.
-                # - If current_q_idx is in answered_questions AND a player got
-                #   it correct, say "Question complete".
-                # - Otherwise all attempts were exhausted.
+                # FIX #3: read attempt_records directly from the engine — it is
+                # a real attribute (List[AttemptRecord]) populated by apply_answer
+                # and (after fix #15) by _on_timer_ended.  The getattr fallback
+                # to [] is kept for safety but will now rarely be needed.
                 attempted = set(getattr(self.engine, "players_attempted", set()))
                 q_idx = self.engine.current_q_idx
                 q_answered = q_idx in self.engine.answered_questions
+                attempt_records = getattr(self.engine, 'attempt_records', [])
 
                 if len(attempted) == 0 and q_answered:
-                    # Timer expired with no buzz
                     self.status_label.setText("⏰ Time's up! No one buzzed. Click NEXT to continue.")
-                elif q_answered and any(
-                    r.is_correct for r in getattr(self.engine, 'attempt_records', [])
-                ):
-                    # Correct answer was given
+                elif q_answered and any(r.is_correct for r in attempt_records):
                     self.status_label.setText("✅ Question complete. Click NEXT to continue.")
                 else:
-                    # All attempts exhausted with no correct answer
                     self.status_label.setText("❌ All attempts exhausted! Click NEXT to continue.")
 
                 self.status_label.setStyleSheet(
@@ -981,9 +937,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         progress = self.engine.get_progress()
         current_idx, total = progress
 
-        # FIX: always show question number; include round only in multi-round games.
-        # The round badge in the timer row already shows ROUND N/M, so the
-        # question label only needs Q N/TOTAL for clarity.
         self.question.setText(f"QUESTION {current_idx} / {total}\n\n{q.text}")
         self.options.set_options(q.options)
 
@@ -1044,69 +997,27 @@ class HostScreen(RemoteKeyHandler, QWidget):
         if player_id in self.player_cards:
             self.player_cards[player_id].set_eliminated(True)
 
-        if self.mqtt_backend:
-            self.mqtt_backend.mark_answer_wrong(player_id)
-
-        # Button press path already handled sfx + unlock in _auto_judge_answer
+        # _answer_judged_by_button is True when the failure came from a
+        # hardware-button answer processed by _auto_judge_answer.  In that
+        # case _auto_judge_answer already called mark_answer_wrong and ran the
+        # UI update via _handle_wrong_answer_ui — skip everything here to
+        # avoid double-calling MQTT and double-triggering SFX/unlock logic.
         if getattr(self, '_answer_judged_by_button', False):
             return
 
+        # Timeout path (answer timer expired) — MQTT and UI are our
+        # responsibility here because _auto_judge_answer was never involved.
+        if self.mqtt_backend:
+            self.mqtt_backend.mark_answer_wrong(player_id)
+
         self.sfx.play_wrong()
-
-        try:
-            remaining_players = self.engine.get_players_remaining()
-            question = self.engine.current_question()
-            can_continue = (
-                self.engine.current_attempt_number <= question.max_attempts
-                and len(remaining_players) > 0
-            )
-        except Exception:
-            can_continue = False
-
-        if can_continue:
-            self.status_label.setText(f"⏰ Player {player_id} TIMEOUT! Buzzers re-opened...")
-            self.status_label.setStyleSheet(
-                "font-size: 22px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
-                "background: rgba(231, 76, 60, 0.2); "
-                "padding: 18px 28px; border: 3px solid #e74c3c; "
-                "border-radius: 10px;"
-            )
-            # AUTO-UNLOCK: directly open buzzers for remaining players
-            self.buzzers_unlocked = True
-            self.btn_unlock.setText("✅ BUZZERS ACTIVE")
-            self.btn_unlock.setEnabled(False)
-            self.status_label.setText(f"⏰ Player {player_id} TIMEOUT! Next player can buzz now!")
-            self.status_label.setStyleSheet(
-                "font-size: 22px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
-                "background: rgba(231, 76, 60, 0.2); "
-                "padding: 18px 28px; border: 3px solid #e74c3c; "
-                "border-radius: 10px;"
-            )
-            if self.mqtt_backend:
-                self.mqtt_backend.unlock_buzzers()
-            self.engine.notify_buzzers_unlocked()
-            self.engine.start_or_resume_question_timer()
-            self.sfx.play_start()
-        else:
-            self.status_label.setText("⏰ No attempts left! Click NEXT to continue.")
-            self.status_label.setStyleSheet(
-                "font-size: 22px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
-                "background: rgba(231, 76, 60, 0.2); "
-                "padding: 18px 28px; border: 3px solid #e74c3c; "
-                "border-radius: 10px;"
-            )
-            self.btn_next.setEnabled(True)
-            self.btn_next.setText("▶️ NEXT QUESTION")
-            self.btn_unlock.setEnabled(False)
+        self._handle_wrong_answer_ui(player_id)
 
     # =========================================================================
     # MQTT EVENT HANDLERS
     # =========================================================================
 
     def _on_mqtt_buzz(self, buzz_event):
-        # FIX #4: gate on engine phase, not UI buzzers_unlocked flag, to avoid
-        # the race where buzzers_unlocked is still True between the buzz being
-        # accepted and _on_lock setting it to False.
         if self.engine.phase != Phase.SHOW_QUESTION:
             print(f"🚫 Buzz ignored - engine phase is {self.engine.phase.value}")
             return
@@ -1131,36 +1042,30 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self._auto_judge_answer(player_id, answer)
 
     def _on_player_connected(self, player_id: int):
-        # Never touch card UI on connect — cards stay grey until player buzzes
         self.engine.register_active_player(player_id)
-        # Track internally so unlock knows who is connected
         if player_id in self.player_cards:
-            self.player_cards[player_id].is_hardware_connected = True
+            card = self.player_cards[player_id]
+            # Track connection state but keep icon grey — icon only lights up on buzz.
+            card.is_hardware_connected = True
+            if not card.is_buzzed and not card.is_eliminated:
+                card.label.setText(f"P{player_id}: READY")
+                card.label.setStyleSheet(card._label_style(card.color))
 
     def _on_player_disconnected(self, player_id: int):
-        # Don't update card UI on disconnect — passive timeout detection
-        # causes false flicker during ping-pong cycles.
-        # Cards reset naturally on game reset / new question.
         self.engine.unregister_active_player(player_id)
         print(f"[UI] Player {player_id} disconnected (card UI unchanged)")
 
     def _update_connection_status(self):
-        """Passive connection poll — runs every 2s.
-        Only updates engine knowledge, never touches player card UI.
-        Card visuals only change on real connect/disconnect MQTT events.
-        """
-        pass  # UI updates removed — prevents flicker during ping-pong
+        pass  # passive — card UI only changes on real MQTT events
 
     # =========================================================================
     # QUESTION SETUP
     # =========================================================================
 
     def _prepare_current_question_ui(self):
-        """Reset per-question UI + reset MQTT backend question state."""
         self._warned_7 = False
         self._warned_3 = False
-        self._grey_out_all_cards()  # grey between questions
-        # FIX #2: mark that any prior heartbeat round is done before starting new one
+        self._grey_out_all_cards()
         self._heartbeat_in_progress = False
 
         self.buzzers_unlocked = False
@@ -1194,30 +1099,18 @@ class HostScreen(RemoteKeyHandler, QWidget):
             card.set_eliminated(False)
             card.highlight_locked(False)
 
-        self.timer.reset()  # show -- until host unlocks; full timer starts then
-
-        # Update round badge
+        self.timer.reset()
         self._update_round_badge()
 
         if self.mqtt_backend:
             q = self.engine.current_question()
             self.mqtt_backend.start_question(question_id=q.id, max_attempts=q.max_attempts)
-            # No heartbeat here — unlock button is always available immediately
 
         self._render_question()
         self._render_scores()
         self.btn_next.setEnabled(True)
 
     def _apply_heartbeat_results(self, alive_map: dict):
-        """Called on main thread when heartbeat round resolves.
-
-        FIX #2: replaces the polling QTimer.singleShot chain entirely.
-        alive_map is {player_id: bool} emitted by bridge.heartbeat_resolved.
-
-        Handles two contexts:
-        - Round transition screen is showing: update btn_continue label/state.
-        - Normal question screen: update status_label and btn_unlock as before.
-        """
         self._heartbeat_in_progress = False
 
         if not self.mqtt_backend:
@@ -1225,11 +1118,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         alive_players = [pid for pid, alive in alive_map.items() if alive]
 
-        # Update engine active player set only — no player card UI changes
         if alive_players:
             self.engine.set_active_players(alive_players)
 
-        # ── Context: round transition screen is visible ────────────────────────
         if self.round_transition_screen.isVisible():
             btn = self.round_transition_screen.btn_continue
             if len(alive_players) == 0:
@@ -1252,11 +1143,77 @@ class HostScreen(RemoteKeyHandler, QWidget):
                     "QPushButton:hover { background: rgba(57, 255, 20, 0.5); }"
                     "QPushButton:pressed { background: rgba(57, 255, 20, 0.7); }"
                 )
-            btn.setEnabled(True)   # always allow host to proceed regardless of result
+            btn.setEnabled(True)
             return
 
-        # ── Context: normal question screen ───────────────────────────────────
-        # Heartbeat only updates engine player set — never touches unlock button
+        # Normal question screen — update label to READY for alive players.
+        # Icon stays grey; it only lights up when a player buzzes in.
+        for pid in alive_players:
+            if pid in self.player_cards:
+                card = self.player_cards[pid]
+                card.is_hardware_connected = True
+                if not card.is_buzzed and not card.is_eliminated:
+                    card.label.setText(f"P{pid}: READY")
+                    card.label.setStyleSheet(card._label_style(card.color))
+
+    # =========================================================================
+    # SHARED WRONG-ANSWER UI HELPER
+    # =========================================================================
+
+    def _handle_wrong_answer_ui(self, player_id: int) -> None:
+        """Update UI after a wrong answer or timeout.
+
+        Single authoritative implementation used by _auto_judge_answer and
+        _on_attempt_failed.  Eliminates the three near-identical blocks that
+        previously diverged (different font sizes, missing unlock calls, etc.).
+        """
+        remaining_players = self.engine.get_players_remaining()
+        try:
+            question = self.engine.current_question()
+            can_continue = (
+                self.engine.current_attempt_number <= question.max_attempts
+                and len(remaining_players) > 0
+            )
+        except Exception:
+            can_continue = False
+
+        if can_continue:
+            self.buzzers_unlocked = True
+            self.btn_unlock.setText("✅ BUZZERS ACTIVE")
+            self.btn_unlock.setEnabled(False)
+            self.btn_unlock.setStyleSheet(
+                "QPushButton { "
+                "background: rgba(255, 193, 7, 0.2); "
+                "border: 3px solid #ffc107; border-radius: 8px; "
+                "padding: 12px 20px; font-size: 14px; font-weight: 900; "
+                "color: white; min-width: 150px; }"
+                "QPushButton:hover { background: rgba(255, 193, 7, 0.4); }"
+                "QPushButton:pressed { background: rgba(255, 193, 7, 0.6); }"
+            )
+            self.status_label.setText(
+                f"❌ Player {player_id} WRONG! Next player can buzz now!"
+            )
+            self.status_label.setStyleSheet(
+                "font-size: 22px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
+                "background: rgba(231, 76, 60, 0.2); "
+                "padding: 18px 28px; border: 3px solid #e74c3c; border-radius: 10px;"
+            )
+            if self.mqtt_backend:
+                self.mqtt_backend.unlock_buzzers()
+            self.engine.notify_buzzers_unlocked()
+            self.engine.start_or_resume_question_timer()
+            self.sfx.play_start()
+        else:
+            self.buzzers_unlocked = False
+            self.btn_next.setEnabled(True)
+            self.btn_next.setText("▶️ NEXT QUESTION")
+            self.btn_unlock.setEnabled(False)
+            self.status_label.setText("❌ All attempts exhausted! Click NEXT to continue.")
+            self.status_label.setStyleSheet(
+                "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
+                "background: rgba(231, 76, 60, 0.2); "
+                "padding: 12px 20px; border: 2px solid #e74c3c; border-radius: 8px;"
+            )
 
     # =========================================================================
     # AUTO JUDGING
@@ -1288,9 +1245,13 @@ class HostScreen(RemoteKeyHandler, QWidget):
         print(f"   Correct:  {question.correct_index} ({question.options[question.correct_index]})")
         print(f"   Result:   {'✅ CORRECT' if is_correct else '❌ WRONG'}")
 
+        # Guard flag prevents _on_attempt_failed from running its own UI/MQTT
+        # updates for the same event — _auto_judge_answer is the authority here.
         self._answer_judged_by_button = True
-        self.engine.apply_answer(is_correct, player_id)
-        self._answer_judged_by_button = False
+        try:
+            self.engine.apply_answer(is_correct, player_id)
+        finally:
+            self._answer_judged_by_button = False
 
         if is_correct:
             self.sfx.play_correct()
@@ -1302,8 +1263,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.status_label.setStyleSheet(
                 "font-size: 14px; font-weight: 700; color: rgba(57, 255, 20, 1.0); "
                 "background: rgba(57, 255, 20, 0.2); "
-                "padding: 12px 20px; border: 2px solid #39FF14; "
-                "border-radius: 8px;"
+                "padding: 12px 20px; border: 2px solid #39FF14; border-radius: 8px;"
             )
 
             if self.mqtt_backend:
@@ -1314,66 +1274,17 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.btn_unlock.setEnabled(False)
             return
 
-        # WRONG answer
+        # WRONG answer ─────────────────────────────────────────────────────
         self.sfx.play_wrong()
         self.options.mark_option_eliminated(answer)
 
-        remaining_players = self.engine.get_players_remaining()
-        question = self.engine.current_question()
-        can_continue = (
-            self.engine.current_attempt_number <= question.max_attempts
-            and len(remaining_players) > 0
-        )
+        # mark_answer_wrong lives HERE (single call site for hardware-judged
+        # answers).  _on_attempt_failed is guarded by _answer_judged_by_button
+        # and will not duplicate this call.
+        if self.mqtt_backend:
+            self.mqtt_backend.mark_answer_wrong(player_id)
 
-        if can_continue:
-            self.status_label.setText(f"❌ Player {player_id} WRONG! Unlock for next attempt...")
-            self.status_label.setStyleSheet(
-                "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
-                "background: rgba(231, 76, 60, 0.2); "
-                "padding: 12px 20px; border: 2px solid #e74c3c; "
-                "border-radius: 8px;"
-            )
-            # AUTO-UNLOCK: directly open buzzers for remaining players
-            self.buzzers_unlocked = True
-            self.btn_unlock.setText("✅ BUZZERS ACTIVE")
-            self.btn_unlock.setEnabled(False)
-            self.status_label.setText(f"❌ Player {player_id} WRONG! Next player can buzz now!")
-            self.status_label.setStyleSheet(
-                "font-size: 22px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
-                "background: rgba(231, 76, 60, 0.2); "
-                "padding: 18px 28px; border: 3px solid #e74c3c; "
-                "border-radius: 10px;"
-            )
-            if self.mqtt_backend:
-                self.mqtt_backend.unlock_buzzers()
-            self.engine.notify_buzzers_unlocked()
-            self.engine.start_or_resume_question_timer()
-            self.sfx.play_start()
-            self.btn_unlock.setStyleSheet(
-                "QPushButton { "
-                "background: rgba(255, 193, 7, 0.2); "
-                "border: 3px solid #ffc107; "
-                "border-radius: 8px; "
-                "padding: 12px 20px; "
-                "font-size: 14px; "
-                "font-weight: 900; "
-                "color: white; "
-                "min-width: 150px; "
-                "}"
-                "QPushButton:hover { background: rgba(255, 193, 7, 0.4); }"
-                "QPushButton:pressed { background: rgba(255, 193, 7, 0.6); }"
-            )
-        else:
-            self.status_label.setText("❌ All attempts exhausted! Click NEXT to continue.")
-            self.status_label.setStyleSheet(
-                "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
-                "background: rgba(231, 76, 60, 0.2); "
-                "padding: 12px 20px; border: 2px solid #e74c3c; "
-                "border-radius: 8px;"
-            )
-            self.btn_next.setEnabled(True)
-            self.btn_next.setText("▶️ NEXT QUESTION")
-            self.btn_unlock.setEnabled(False)
+        self._handle_wrong_answer_ui(player_id)
 
     # =========================================================================
     # ROUND / GAME END SCREENS
@@ -1387,7 +1298,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
             questions_in_next=self.engine.cfg.questions_per_round,
         )
 
-        # Start buzzer ping before the fade so results arrive during the animation.
         if self.mqtt_backend and not self._heartbeat_in_progress:
             self._heartbeat_in_progress = True
             self._round_transition_ping_pending = True
@@ -1396,17 +1306,23 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.mqtt_backend.send_heartbeat_to_all(timeout_seconds=10)
         else:
             self._round_transition_ping_pending = False
+            # No MQTT ping — enable the button immediately
+            self.round_transition_screen.btn_continue.setEnabled(True)
 
-        # Show the dialog floating over the (still-visible) host screen.
         self.round_transition_screen.show()
         self.round_transition_screen.fade_in(duration_ms=400)
 
+        # FIX #12: start auto-countdown so the transition advances automatically
+        # if the host doesn't click within 15 seconds.
+        self.round_transition_screen.start_auto_countdown(seconds=15)
+
     def _finish_show_round_transition(self):
-        pass  # no longer used — kept as a no-op for safety
+        pass  # no longer used — kept as no-op for safety
 
     def _continue_to_next_round(self):
-        """Advance to the next round after the transition screen."""
         self.round_transition_screen.btn_continue.setEnabled(False)
+        # Stop the auto-countdown so it doesn't fire again after manual click
+        self.round_transition_screen.stop_auto_countdown()
 
         if getattr(self, "_round_transition_ping_pending", False):
             self._heartbeat_in_progress = True
@@ -1429,14 +1345,15 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
     def _show_winner_screen(self):
         ranking = self.engine.scores.get_ranking()
-        winner_id = ranking[0][0] if ranking else 1
+        # Use get_winner() which returns None on a tie — never pick rank[0] blindly.
+        winner_id = self.engine.scores.get_winner() or (ranking[0][0] if ranking else 1)
         scores_dict = dict(ranking)
         self.winner_screen.set_results(scores=scores_dict, winner_id=winner_id)
         self.winner_screen.show()
         self.winner_screen.fade_in(duration_ms=500)
 
     def _finish_show_winner_screen(self):
-        pass  # no longer used — kept as a no-op for safety
+        pass  # no longer used
 
     def _play_again(self):
         self.winner_screen.fade_out(
@@ -1459,6 +1376,10 @@ class HostScreen(RemoteKeyHandler, QWidget):
     # =========================================================================
 
     def _award_bonus_point(self):
+        # FIX #11: only allow bonus awards when a game is actually in progress
+        if not self.game_started:
+            return
+
         dialog = QDialog(self)
         dialog.setWindowTitle("⭐ Award Bonus Point")
         dialog.setModal(True)
