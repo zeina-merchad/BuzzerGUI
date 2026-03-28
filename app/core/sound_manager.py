@@ -55,8 +55,16 @@ class SoundManager(QObject):
             else:
                 # Use system beep as fallback
                 print(f"Sound file not found: {filename}, using fallback")
-            
+
             effect.setVolume(self.volume)
+            # Warm-load the effect early so the first real play is less likely
+            # to be dropped while the media backend is still loading.
+            if sound_path.exists():
+                try:
+                    effect.play()
+                    effect.stop()
+                except Exception:
+                    pass
             self._sounds[sound_id] = effect
             
         except Exception as e:
