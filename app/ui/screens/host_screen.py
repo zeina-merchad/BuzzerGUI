@@ -313,6 +313,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         self._heartbeat_in_progress = False
         self._round_transition_ping_pending = False
+        self._round_transition_has_live_buzzers = True
 
         self.winner_screen = WinnerScreen(parent=self)
         self.winner_screen.hide()
@@ -1022,27 +1023,32 @@ class HostScreen(RemoteKeyHandler, QWidget):
         alive_players = sorted(pid for pid, alive in alive_map.items() if alive)
         self.engine.set_active_players(alive_players)
 
+        # First update every card, not only alive ones
         for pid, card in self.player_cards.items():
             card.set_connected(pid in alive_players)
 
         if self.round_transition_screen.isVisible():
             btn = self.round_transition_screen.btn_continue
+            self._round_transition_has_live_buzzers = len(alive_players) > 0
             if len(alive_players) == 0:
                 btn.setText("⚠️ No live buzzers detected")
                 btn.setStyleSheet(
                     "QPushButton { "
-                    "background: rgba(100, 100, 100, 0.2); "
+                    "background: rgba(100, 100, 100, 0.18); "
                     "border: 3px solid #666; border-radius: 12px; "
-                    "padding: 25px 50px; font-size: 22px; font-weight: 900; color: #777; }"
+                    "padding: 25px 50px; font-size: 22px; font-weight: 900; color: #999; }"
+                    "QPushButton:hover { background: rgba(100, 100, 100, 0.18); }"
                 )
+                self.round_transition_screen.stop_auto_countdown()
                 btn.setEnabled(False)
-                self.status_label.setText("⚠️ Cannot continue: reconnect at least one buzzer.")
+                self.status_label.setText("⚠️ Next round blocked: no live buzzers detected.")
                 self.status_label.setStyleSheet(
                     "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
                     "background: rgba(231, 76, 60, 0.2); "
                     "padding: 12px 20px; border: 2px solid #e74c3c; border-radius: 8px;"
                 )
             else:
+                btn.setEnabled(True)
                 players_str = ", ".join(f"P{p}" for p in alive_players)
                 btn.setText(f"✅ {players_str} ready — START NEXT ROUND")
                 btn.setStyleSheet(
@@ -1053,7 +1059,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
                     "QPushButton:hover { background: rgba(57, 255, 20, 0.5); }"
                     "QPushButton:pressed { background: rgba(57, 255, 20, 0.7); }"
                 )
-                btn.setEnabled(True)
+            btn.setEnabled(self._round_transition_has_live_buzzers)
             return
 
 
@@ -1115,12 +1121,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.engine.start_or_resume_question_timer()
 
     def _update_connection_status(self):
-        if not self.mqtt_backend:
-            return
-        alive_players = set(self.mqtt_backend.get_connected_players(timeout_seconds=max(2, int(self.mqtt_backend.heartbeat_timeout * 2))))
-        self.engine.set_active_players(sorted(alive_players))
-        for pid, card in self.player_cards.items():
-            card.set_connected(pid in alive_players)
+        pass  # passive — card UI only changes on real MQTT events
 
     # =========================================================================
     # QUESTION SETUP
@@ -1310,6 +1311,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
     # =========================================================================
 
     def _show_round_transition(self, completed_round: int, next_round: int):
+        self._round_transition_has_live_buzzers = True
         self.round_transition_screen.set_round_info(
             completed_round=completed_round,
             next_round=next_round,
@@ -1339,14 +1341,10 @@ class HostScreen(RemoteKeyHandler, QWidget):
         pass  # no longer used — kept as no-op for safety
 
     def _continue_to_next_round(self):
-        if self.mqtt_backend and not self.engine.get_players_remaining():
-            self.status_label.setText("⚠️ Cannot continue: no live buzzers connected.")
-            self.status_label.setStyleSheet(
-                "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
-                "background: rgba(231, 76, 60, 0.2); "
-                "padding: 12px 20px; border: 2px solid #e74c3c; border-radius: 8px;"
-            )
+        if not self._round_transition_has_live_buzzers:
+            QMessageBox.warning(self, "No Live Buzzers", "Cannot start the next round because no live buzzers were detected.")
             return
+
         self.round_transition_screen.btn_continue.setEnabled(False)
         # Stop the auto-countdown so it doesn't fire again after manual click
         self.round_transition_screen.stop_auto_countdown()

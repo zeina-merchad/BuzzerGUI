@@ -1142,44 +1142,6 @@ class AdminDashboard(QWidget):
         self._mt_ch(self.emt.currentText())
         self.emp.setText(q.media.path or "")
 
-
-    def _ensure_media_relative(self, path_text: str, media_type_text: str) -> str:
-        path_text = (path_text or "").strip()
-        if not path_text or not self.current_excel_path:
-            return path_text
-
-        base_dir = self.current_excel_path.parent
-        src = Path(path_text)
-
-        if not src.is_absolute():
-            return path_text.replace("\\", "/")
-
-        type_dir = {
-            "image": "media/images",
-            "audio": "media/audio",
-            "video": "media/video",
-        }.get(media_type_text.lower(), "media")
-
-        target_dir = base_dir / type_dir
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        target = target_dir / src.name
-        if target.resolve() != src.resolve():
-            stem = target.stem
-            suffix = target.suffix
-            counter = 1
-            while target.exists():
-                try:
-                    if target.samefile(src):
-                        break
-                except Exception:
-                    pass
-                target = target_dir / f"{stem}_{counter}{suffix}"
-                counter += 1
-            shutil.copy2(src, target)
-
-        return str(target.relative_to(base_dir)).replace("\\", "/")
-
     def _sv_q(self):
         t = self.et.toPlainText().strip()
         if not t:
@@ -1288,6 +1250,8 @@ class AdminDashboard(QWidget):
                 self.question_label.setStyleSheet("font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.8);")
 
     def _br(self):
+        import shutil
+
         mt  = self.emt.currentText()
         flt = {
             "Image": "Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp)",
@@ -1295,20 +1259,50 @@ class AdminDashboard(QWidget):
             "Video": "Video (*.mp4 *.avi *.mkv *.mov *.webm)",
         }
         start = str(self.current_excel_path.parent) if self.current_excel_path else ""
-        p, _ = QFileDialog.getOpenFileName(self, f"Select {mt}", start, flt.get(mt, "*.*"))
-        if not p:
+        selected_path, _ = QFileDialog.getOpenFileName(self, f"Select {mt}", start, flt.get(mt, "*.*"))
+        if not selected_path:
             return
-        if self.current_excel_path:
-            try:
-                rel = Path(p).relative_to(self.current_excel_path.parent)
-                self.emp.setText(str(rel))
-                return
-            except ValueError:
-                QMessageBox.warning(self, "Media Outside Pack Directory",
-                    "The selected file is outside the pack directory.\n"
-                    "An absolute path will be stored — portability may be reduced.\n\n"
-                    "Tip: copy the media file into the pack directory first.")
-        self.emp.setText(p)
+
+        src = Path(selected_path)
+        if not self.current_excel_path:
+            self.emp.setText(str(src))
+            return
+
+        pack_dir = self.current_excel_path.parent
+        try:
+            rel = src.relative_to(pack_dir)
+            self.emp.setText(str(rel).replace(chr(92), "/"))
+            return
+        except ValueError:
+            pass
+
+        media_dir = pack_dir / "media"
+        media_dir.mkdir(parents=True, exist_ok=True)
+
+        dest = media_dir / src.name
+        if dest.exists() and dest.resolve() != src.resolve():
+            stem = src.stem
+            suffix = src.suffix
+            counter = 2
+            while True:
+                candidate = media_dir / f"{stem}_{counter}{suffix}"
+                if not candidate.exists():
+                    dest = candidate
+                    break
+                counter += 1
+
+        try:
+            if src.resolve() != dest.resolve():
+                shutil.copy2(src, dest)
+            rel_dest = dest.relative_to(pack_dir)
+            self.emp.setText(str(rel_dest).replace(chr(92), "/"))
+            QMessageBox.information(
+                self,
+                "Media Imported",
+                f"Copied media into the pack\n{rel_dest}"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Import Failed", f"Could not copy media into the pack\n{e}")
 
     # ── STATS ─────────────────────────────────────────────────────────────────
 

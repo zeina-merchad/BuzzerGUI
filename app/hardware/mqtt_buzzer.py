@@ -2,11 +2,11 @@ import paho.mqtt.client as mqtt
 import json
 import time
 import threading
-from typing import Optional, Callable, Dict, List, Set
+from typing import Optional, Callable, Dict, List
 from dataclasses import dataclass
 from enum import Enum
 
-from PySide6.QtCore import QObject, Signal, Qt, QTimer
+from PySide6.QtCore import QObject, Signal, Qt
 
 
 class BuzzerState(Enum):
@@ -77,21 +77,16 @@ class MQTTBuzzerBackend:
         self.client.on_message    = self._on_message
         self.client.on_disconnect = self._on_disconnect
 
+        self._state_lock = threading.RLock()
+
         self.connected: bool = False
         self.connection_time: Optional[float] = None
 
         self.state: BuzzerState = BuzzerState.IDLE
         self.current_question_id: Optional[str] = None
-        self.max_attempts: int = 1
-        self.attempt_count: int = 0
         self.locked_player: Optional[int] = None
-        self.eliminated_players: Set[int] = set()
 
         self.connected_players: Dict[int, float] = {}
-
-        self._state_lock = threading.RLock()
-        self._connect_in_progress: bool = False
-        self._connect_timeout_timer: Optional[QTimer] = None
 
         self.heartbeat_timeout = 5.0
         self.last_heartbeat_sent: Dict[int, float] = {}
@@ -193,7 +188,6 @@ class MQTTBuzzerBackend:
     def _on_connect(self, client, userdata, flags, rc) -> None:
         if rc == 0:
             self.connected = True
-            self._connect_in_progress = False
             self.connection_time = time.time()
             print("[MQTT] ✅ Broker connected")
             client.subscribe(self.TOPIC_BUZZ)
@@ -207,7 +201,6 @@ class MQTTBuzzerBackend:
 
     def _on_disconnect(self, client, userdata, rc) -> None:
         self.connected = False
-        self._connect_in_progress = False
 
         for pid in list(self.connected_players.keys()):
             if pid not in self._known_disconnected:
@@ -231,15 +224,20 @@ class MQTTBuzzerBackend:
             self.bridge.player_connected.emit(player_id)
     def _passive_disconnect_check(self) -> None:
         now = time.time()
-        if now - self._last_conn_check < self._CONN_CHECK_INTERVAL_S:
-            return
+        with self._state_lock:
+            if now - self._last_conn_check < self._CONN_CHECK_INTERVAL_S:
+                return
+            self._last_conn_check = now
+            items = list(self.connected_players.items())
 
-        self._last_conn_check = now
-
-        for pid, last_seen in list(self.connected_players.items()):
+        for pid, last_seen in items:
             if (now - last_seen) > self.heartbeat_timeout:
-                if pid not in self._known_disconnected:
-                    self._known_disconnected.add(pid)
+                should_emit = False
+                with self._state_lock:
+                    if pid not in self._known_disconnected:
+                        self._known_disconnected.add(pid)
+                        should_emit = True
+                if should_emit:
                     print(f"[MQTT] ✗ Player {pid} timed out (last seen {now - last_seen:.1f}s ago)")
                     self.bridge.player_disconnected.emit(pid)
     def _on_message(self, client, userdata, msg) -> None:
@@ -396,18 +394,17 @@ class MQTTBuzzerBackend:
         recv_ms = int(time.time() * 1000)
         ev      = BuzzEvent(player_id=player_id, timestamp_ms=ts_ms, server_received_ms=recv_ms)
 
-        if self.state != BuzzerState.ACTIVE:
-            print(f"[MQTT] Buzz ignored (state={self.state.value}) from P{player_id}")
-            return
-        if self.locked_player is not None:
-            print(f"[MQTT] Buzz ignored (already locked by P{self.locked_player})")
-            return
-        if player_id in self.eliminated_players:
-            print(f"[MQTT] Buzz ignored (eliminated) P{player_id}")
-            return
+        with self._state_lock:
+            current_state = self.state
+            locked_player = self.locked_player
+            if current_state != BuzzerState.ACTIVE:
+                print(f"[MQTT] Buzz ignored (state={current_state.value}) from P{player_id}")
+                return
+            if locked_player is not None:
+                print(f"[MQTT] Buzz ignored (already locked by P{locked_player})")
+                return
+            self.locked_player = player_id
 
-        self.attempt_count += 1
-        self.locked_player  = player_id
         self._set_state(BuzzerState.LOCKED)
         self._publish_lock(player_id)
         self.bridge.buzz_received.emit(ev)
@@ -418,12 +415,15 @@ class MQTTBuzzerBackend:
         recv_ms = int(time.time() * 1000)
         ev      = AnswerEvent(player_id=player_id, answer=ans, timestamp_ms=ts_ms, server_received_ms=recv_ms)
 
-        if self.state != BuzzerState.LOCKED:
-            print(f"[MQTT] Answer ignored (state={self.state.value}) from P{player_id}")
-            return
-        if self.locked_player != player_id:
-            print(f"[MQTT] Answer ignored (locked=P{self.locked_player}) from P{player_id}")
-            return
+        with self._state_lock:
+            current_state = self.state
+            locked_player = self.locked_player
+            if current_state != BuzzerState.LOCKED:
+                print(f"[MQTT] Answer ignored (state={current_state.value}) from P{player_id}")
+                return
+            if locked_player != player_id:
+                print(f"[MQTT] Answer ignored (locked=P{locked_player}) from P{player_id}")
+                return
 
         self._set_state(BuzzerState.ANSWERED)
         self.bridge.answer_received.emit(ev)
@@ -435,46 +435,38 @@ class MQTTBuzzerBackend:
     def start_question(self, question_id: str, max_attempts: int = 1) -> None:
         with self._state_lock:
             self.current_question_id = question_id
-            self.max_attempts = max(1, int(max_attempts))
-            self.attempt_count = 0
-            self.eliminated_players.clear()
             self.locked_player = None
-            self._set_state(BuzzerState.IDLE)
+        self._set_state(BuzzerState.IDLE)
         self._publish_reset()
 
     def unlock_buzzers(self) -> None:
         with self._state_lock:
             self.locked_player = None
-            self._set_state(BuzzerState.ACTIVE)
         self._publish_reset()
+        self._set_state(BuzzerState.ACTIVE)
 
     def mark_answer_wrong(self, player_id: int) -> None:
-        """Reflect a wrong answer on the hardware layer only.
+        """Clear the current hardware lock after a wrong answer.
 
-        The engine is the sole authority on whether another attempt remains.
-        This method therefore never decides progression based on attempt_count.
+        The GameEngine is the single authority for attempts, eliminations,
+        scoring, and whether another unlock is allowed. The MQTT layer only
+        mirrors the transport-facing lock state.
         """
         with self._state_lock:
-            self.eliminated_players.add(int(player_id))
             self.locked_player = None
-            self._set_state(BuzzerState.IDLE)
-        self._publish_reset()
+        self._set_state(BuzzerState.IDLE)
 
     def mark_answer_correct(self, player_id: int) -> None:
         with self._state_lock:
             self.locked_player = None
-            self._set_state(BuzzerState.RESULT_SHOWN)
-        self._publish_reset()
+        self._set_state(BuzzerState.RESULT_SHOWN)
 
     def end_question(self) -> None:
         with self._state_lock:
             self.current_question_id = None
             self.locked_player = None
-            self.attempt_count = 0
-            self.max_attempts = 1
-            self.eliminated_players.clear()
-            self._set_state(BuzzerState.IDLE)
         self._publish_reset()
+        self._set_state(BuzzerState.IDLE)
 
     # =========================================================================
     # MQTT PUBLISHING
@@ -498,8 +490,9 @@ class MQTTBuzzerBackend:
             print(f"[MQTT] ❌ Failed to publish reset: {e}")
 
     def _set_state(self, new_state: BuzzerState) -> None:
-        old = self.state
-        self.state = new_state
+        with self._state_lock:
+            old = self.state
+            self.state = new_state
         if old != new_state:
             print(f"[MQTT] State: {old.value} -> {new_state.value}")
             self.bridge.state_changed.emit(new_state)
@@ -522,8 +515,5 @@ class MQTTBuzzerBackend:
             "state":             self.state.value,
             "current_question":  self.current_question_id,
             "locked_player":     self.locked_player,
-            "attempt_count":     self.attempt_count,
-            "max_attempts":      self.max_attempts,
-            "eliminated_players": sorted(list(self.eliminated_players)),
             "connected_players": self.get_connected_players(timeout_seconds=10),
         }
