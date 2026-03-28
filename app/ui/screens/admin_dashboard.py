@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import shutil
 from pathlib import Path
 from typing import List, Optional
 
@@ -1140,6 +1141,44 @@ class AdminDashboard(QWidget):
         self.emt.setCurrentIndex(mi)
         self._mt_ch(self.emt.currentText())
         self.emp.setText(q.media.path or "")
+
+
+    def _ensure_media_relative(self, path_text: str, media_type_text: str) -> str:
+        path_text = (path_text or "").strip()
+        if not path_text or not self.current_excel_path:
+            return path_text
+
+        base_dir = self.current_excel_path.parent
+        src = Path(path_text)
+
+        if not src.is_absolute():
+            return path_text.replace("\\", "/")
+
+        type_dir = {
+            "image": "media/images",
+            "audio": "media/audio",
+            "video": "media/video",
+        }.get(media_type_text.lower(), "media")
+
+        target_dir = base_dir / type_dir
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        target = target_dir / src.name
+        if target.resolve() != src.resolve():
+            stem = target.stem
+            suffix = target.suffix
+            counter = 1
+            while target.exists():
+                try:
+                    if target.samefile(src):
+                        break
+                except Exception:
+                    pass
+                target = target_dir / f"{stem}_{counter}{suffix}"
+                counter += 1
+            shutil.copy2(src, target)
+
+        return str(target.relative_to(base_dir)).replace("\\", "/")
 
     def _sv_q(self):
         t = self.et.toPlainText().strip()

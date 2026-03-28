@@ -134,46 +134,6 @@ class GameEngine(QObject):
         # Active players — defaults to all four for demo/test mode
         self._active_player_ids: Set[int] = {1, 2, 3, 4}
 
-        # Input debounce / admin transition safety
-        self._last_buzz_player_id: Optional[int] = None
-        self._last_buzz_at: float = 0.0
-        self._buzz_debounce_s: float = 0.20
-
-
-    # =========================================================================
-    # SNAPSHOT / TRANSITION GUARDS
-    # =========================================================================
-
-    def get_state_snapshot(self) -> dict:
-        return {
-            "phase": self.phase,
-            "locked_player": self.locked_buzzer_id,
-            "active_player_ids": sorted(self._active_player_ids),
-            "players_attempted": sorted(self.players_attempted),
-            "scores": dict(self.scores.scores),
-            "current_attempt_number": self.current_attempt_number,
-            "question_index": self.current_q_idx,
-            "question_remaining_ms": int(self._question_remaining_ms),
-            "answer_remaining_ms": int(self._answer_remaining_ms),
-        }
-
-    def can_transition(self, action: str) -> bool:
-        action = str(action).strip().lower()
-        if action == "unlock":
-            return self.phase == Phase.SHOW_QUESTION and bool(self.get_players_remaining())
-        if action == "next":
-            return self.phase in (Phase.IDLE, Phase.GAME_END)
-        if action == "buzz":
-            return self.phase == Phase.SHOW_QUESTION and self.locked_buzzer_id is None
-        if action == "answer":
-            return self.phase == Phase.BUZZED and self.locked_buzzer_id is not None
-        if action == "bonus":
-            return self.phase != Phase.GAME_END
-        return True
-
-    def _clear_current_lock(self) -> None:
-        self._clear_current_lock()
-
     # =========================================================================
     # ACTIVE PLAYER MANAGEMENT
     # =========================================================================
@@ -203,7 +163,10 @@ class GameEngine(QObject):
             self.players_attempted.add(pid)
             self.attempt_failed.emit(pid, self.current_attempt_number)
 
-            self._clear_current_lock()
+            self.locked_buzzer_id = None
+            self.lock_changed.emit(None)
+            self.answer_timer.stop()
+            self._answer_remaining_ms = 0
 
             question = self.current_question()
             remaining_players = self.get_players_remaining()
@@ -238,21 +201,18 @@ class GameEngine(QObject):
 
     def set_active_players(self, player_ids) -> None:
         new_active = set(int(p) for p in player_ids)
-        old_active = set(self._active_player_ids)
-        removed = old_active - new_active
-        added = new_active - old_active
+        removed = self._active_player_ids - new_active
+        added = new_active - self._active_player_ids
 
-        # Handle removals before replacing the set so unregister_active_player()
-        # can still detect that the player was previously active.
-        for pid in sorted(removed):
-            self.unregister_active_player(pid)
+        self._active_player_ids = new_active
 
         for pid in sorted(added):
             print(f"[ENGINE] Player {pid} became active")
 
-        # Keep any late disconnect side effects from unregister_active_player(),
-        # but otherwise sync to the new authoritative heartbeat result.
-        self._active_player_ids = set(new_active)
+        # Use unregister logic for removed players so locked-player disconnects are
+        # handled consistently.
+        for pid in sorted(removed):
+            self.unregister_active_player(pid)
 
 
     def start_or_resume_question_timer(self) -> None:
@@ -288,14 +248,6 @@ class GameEngine(QObject):
             print(f"[ENGINE] ✗ Buzz rejected - Player {buzzer_id} is not registered as active")
             return False
 
-        now = time.monotonic()
-        if (
-            self._last_buzz_player_id == buzzer_id
-            and (now - self._last_buzz_at) < self._buzz_debounce_s
-        ):
-            print(f"[ENGINE] ✗ Buzz rejected - debounce hit for P{buzzer_id}")
-            return False
-
         if buzzer_id in self.players_attempted:
             self.error_occurred.emit(f"Player {buzzer_id} already attempted this question")
             print(f"[ENGINE] ✗ Player {buzzer_id} already attempted")
@@ -311,8 +263,6 @@ class GameEngine(QObject):
             return False
 
         self.locked_buzzer_id = buzzer_id
-        self._last_buzz_player_id = buzzer_id
-        self._last_buzz_at = now
         self.lock_changed.emit(buzzer_id)
 
         self.phase = Phase.BUZZED
@@ -580,8 +530,6 @@ class GameEngine(QObject):
         self.players_attempted.clear()
         self.attempt_records.clear()
         self.buzz_unlock_time_ms = 0
-        self._question_remaining_ms = int(self.cfg.timer_seconds * 1000)
-        self._answer_remaining_ms = 0
 
         if self.cfg.shuffle_questions:
             self.questions = self.original_questions[:]
@@ -589,8 +537,6 @@ class GameEngine(QObject):
 
         self._undo_stack.clear()
         self._redo_stack.clear()
-        self._last_buzz_player_id = None
-        self._last_buzz_at = 0.0
 
         self._stop_all_timers()
 
@@ -602,12 +548,9 @@ class GameEngine(QObject):
         print("[ENGINE] Game reset - all locks released")
 
     def end_game(self) -> None:
-        self.locked_buzzer_id = None
-        self.lock_changed.emit(None)
-        self._stop_all_timers()
-        self._answer_remaining_ms = 0
         self.phase = Phase.GAME_END
         self.phase_changed.emit(self.phase.value)
+        self._stop_all_timers()
         print("[ENGINE] Game ended")
 
     def update_config(self, new_config: GameConfig) -> None:
@@ -697,8 +640,6 @@ class GameEngine(QObject):
         self._answer_remaining_ms = 0
         self._undo_stack.clear()
         self._redo_stack.clear()
-        self._last_buzz_player_id = None
-        self._last_buzz_at = 0.0
 
         self.phase = Phase.IDLE
         self.phase_changed.emit(self.phase.value)
@@ -731,6 +672,71 @@ class GameEngine(QObject):
         """Alias for load_questions."""
         self.load_questions(questions)
 
+
+    # =========================================================================
+    # STATE SNAPSHOTS / RESTORE
+    # =========================================================================
+
+    def get_state_snapshot(self) -> dict:
+        return {
+            "scores": self.scores.scores.copy(),
+            "score_history": list(self.scores.history),
+            "answered_questions": set(self.answered_questions),
+            "current_q_idx": self.current_q_idx,
+            "phase": self.phase.value,
+            "locked_buzzer_id": self.locked_buzzer_id,
+            "current_attempt_number": self.current_attempt_number,
+            "players_attempted": set(self.players_attempted),
+            "attempt_records": [AttemptRecord(**vars(r)) for r in self.attempt_records],
+            "question_remaining_ms": int(self._question_remaining_ms),
+            "answer_remaining_ms": int(self._answer_remaining_ms),
+            "active_player_ids": set(self._active_player_ids),
+            "stats": {
+                "questions_answered": self.stats.questions_answered,
+                "correct_answers": self.stats.correct_answers,
+                "wrong_answers": self.stats.wrong_answers,
+                "total_buzz_time_ms": self.stats.total_buzz_time_ms,
+                "fastest_buzz_ms": self.stats.fastest_buzz_ms,
+                "player_buzz_counts": dict(self.stats.player_buzz_counts),
+                "questions_by_attempt": dict(self.stats.questions_by_attempt),
+                "total_attempts": self.stats.total_attempts,
+            },
+        }
+
+    def _restore_state_snapshot(self, snapshot: dict) -> None:
+        self._stop_all_timers()
+        self.scores.scores = snapshot["scores"].copy()
+        self.scores.history = list(snapshot.get("score_history", []))
+        self.answered_questions = set(snapshot["answered_questions"])
+        self.current_q_idx = int(snapshot["current_q_idx"])
+        self.phase = Phase.from_value(snapshot["phase"])
+        self.locked_buzzer_id = snapshot["locked_buzzer_id"]
+        self.current_attempt_number = int(snapshot["current_attempt_number"])
+        self.players_attempted = set(snapshot["players_attempted"])
+        self.attempt_records = [AttemptRecord(**vars(r)) if isinstance(r, AttemptRecord) else AttemptRecord(**r)
+                                for r in snapshot.get("attempt_records", [])]
+        self._question_remaining_ms = int(snapshot.get("question_remaining_ms", int(self.cfg.timer_seconds * 1000)))
+        self._answer_remaining_ms = int(snapshot.get("answer_remaining_ms", 0))
+        self._active_player_ids = set(snapshot.get("active_player_ids", {1, 2, 3, 4}))
+
+        stats_data = snapshot.get("stats", {})
+        self.stats = GameStats(
+            questions_answered=int(stats_data.get("questions_answered", 0)),
+            correct_answers=int(stats_data.get("correct_answers", 0)),
+            wrong_answers=int(stats_data.get("wrong_answers", 0)),
+            total_buzz_time_ms=int(stats_data.get("total_buzz_time_ms", 0)),
+            fastest_buzz_ms=stats_data.get("fastest_buzz_ms"),
+            player_buzz_counts=dict(stats_data.get("player_buzz_counts", {})),
+            questions_by_attempt=dict(stats_data.get("questions_by_attempt", {})),
+            total_attempts=int(stats_data.get("total_attempts", 0)),
+        )
+
+        self.phase_changed.emit(self.phase.value)
+        self.lock_changed.emit(self.locked_buzzer_id)
+        self.scores_changed.emit()
+        self.stats_changed.emit()
+        self.question_changed.emit()
+        self.attempt_changed.emit(self.current_attempt_number)
     # =========================================================================
     # ANSWER HANDLING WITH CASCADING ATTEMPTS
     # =========================================================================
@@ -785,7 +791,9 @@ class GameEngine(QObject):
 
             print(f"[ENGINE] ✓ Player {pid} correct! +{points} pts (Attempt {self.current_attempt_number})")
 
-            self._clear_current_lock()
+            self.locked_buzzer_id = None
+            self.lock_changed.emit(None)
+            self.answer_timer.stop()
             self.phase = Phase.IDLE
             self.phase_changed.emit(self.phase.value)
 
@@ -822,7 +830,8 @@ class GameEngine(QObject):
                 self.current_attempt_number += 1
                 self.attempt_changed.emit(self.current_attempt_number)
 
-                self._clear_current_lock()
+                self.locked_buzzer_id = None
+                self.lock_changed.emit(None)
 
                 # FIX #13: respect reset_timer_each_attempt — only reset to
                 # full time when the flag is True; otherwise resume from the
@@ -899,45 +908,17 @@ class GameEngine(QObject):
               f"(Q{state['question_idx'] + 1}, {state['points']} pts)")
         return True
 
+    
     def redo_last_answer(self) -> bool:
-        """Re-apply the last undone answer.
-
-        FIX #16: restores from scores_after snapshot instead of adding on top
-        of whatever the current total is, preventing double-counting.
-        """
+        """Re-apply the full post-answer game state."""
         if not self._redo_stack:
             return False
         state = self._redo_stack.pop()
         self._undo_stack.append(state)
-
-        # Restore to the post-answer snapshot if available; fall back to add()
-        scores_after = state.get('scores_after')
-        if scores_after is not None:
-            for pid, score in scores_after.items():
-                self.scores.scores[pid] = score
-        else:
-            # Legacy entries that pre-date this fix — use add() as before
-            self.scores.add(state['player_id'], state['points'],
-                            f"Redo - Q{state['question_idx'] + 1}")
-
-        self.answered_questions.add(state['question_idx'])
-        self.scores_changed.emit()
+        snapshot = state.get('snapshot_after')
+        if snapshot is None:
+            return False
+        self._restore_state_snapshot(snapshot)
         print(f"[ENGINE] ↪ Redid answer for Player {state['player_id']} "
               f"(Q{state['question_idx'] + 1}, +{state['points']} pts)")
         return True
-
-    # =========================================================================
-    # INTERNAL HELPERS
-    # =========================================================================
-
-    def _on_all_attempts_exhausted(self) -> None:
-        print("[ENGINE] → No more attempts available")
-        self.answered_questions.add(self.current_q_idx)
-
-        self.locked_buzzer_id = None
-        self.lock_changed.emit(None)
-        self._stop_all_timers()
-        self.phase = Phase.IDLE
-        self.phase_changed.emit(self.phase.value)
-
-        print("[ENGINE] ⏸️ All attempts exhausted - waiting for admin to advance")

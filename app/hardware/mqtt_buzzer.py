@@ -6,7 +6,7 @@ from typing import Optional, Callable, Dict, List, Set
 from dataclasses import dataclass
 from enum import Enum
 
-from PySide6.QtCore import QObject, Signal, Qt
+from PySide6.QtCore import QObject, Signal, Qt, QTimer
 
 
 class BuzzerState(Enum):
@@ -89,6 +89,10 @@ class MQTTBuzzerBackend:
 
         self.connected_players: Dict[int, float] = {}
 
+        self._state_lock = threading.RLock()
+        self._connect_in_progress: bool = False
+        self._connect_timeout_timer: Optional[QTimer] = None
+
         self.heartbeat_timeout = 5.0
         self.last_heartbeat_sent: Dict[int, float] = {}
         self.last_heartbeat_received: Dict[int, float] = {}
@@ -99,7 +103,6 @@ class MQTTBuzzerBackend:
 
         self._known_disconnected: Set[int] = set()
         self._last_conn_check: float = 0.0
-        self._state_lock = threading.RLock()
 
         # Callback API (HostScreen assigns these)
         self.on_buzz_callback:                Optional[Callable] = None
@@ -190,6 +193,7 @@ class MQTTBuzzerBackend:
     def _on_connect(self, client, userdata, flags, rc) -> None:
         if rc == 0:
             self.connected = True
+            self._connect_in_progress = False
             self.connection_time = time.time()
             print("[MQTT] ✅ Broker connected")
             client.subscribe(self.TOPIC_BUZZ)
@@ -203,6 +207,7 @@ class MQTTBuzzerBackend:
 
     def _on_disconnect(self, client, userdata, rc) -> None:
         self.connected = False
+        self._connect_in_progress = False
 
         for pid in list(self.connected_players.keys()):
             if pid not in self._known_disconnected:
@@ -380,8 +385,6 @@ class MQTTBuzzerBackend:
     # =========================================================================
 
     def lock_player(self, player_id: int) -> None:
-        with self._state_lock:
-            self.locked_player = int(player_id)
         self._publish_lock(int(player_id))
 
     # =========================================================================
@@ -393,19 +396,18 @@ class MQTTBuzzerBackend:
         recv_ms = int(time.time() * 1000)
         ev      = BuzzEvent(player_id=player_id, timestamp_ms=ts_ms, server_received_ms=recv_ms)
 
-        with self._state_lock:
-            if self.state != BuzzerState.ACTIVE:
-                print(f"[MQTT] Buzz ignored (state={self.state.value}) from P{player_id}")
-                return
-            if self.locked_player is not None:
-                print(f"[MQTT] Buzz ignored (already locked by P{self.locked_player})")
-                return
-            if player_id in self.eliminated_players:
-                print(f"[MQTT] Buzz ignored (eliminated) P{player_id}")
-                return
+        if self.state != BuzzerState.ACTIVE:
+            print(f"[MQTT] Buzz ignored (state={self.state.value}) from P{player_id}")
+            return
+        if self.locked_player is not None:
+            print(f"[MQTT] Buzz ignored (already locked by P{self.locked_player})")
+            return
+        if player_id in self.eliminated_players:
+            print(f"[MQTT] Buzz ignored (eliminated) P{player_id}")
+            return
 
-            self.attempt_count += 1
-            self.locked_player  = player_id
+        self.attempt_count += 1
+        self.locked_player  = player_id
         self._set_state(BuzzerState.LOCKED)
         self._publish_lock(player_id)
         self.bridge.buzz_received.emit(ev)
@@ -416,13 +418,12 @@ class MQTTBuzzerBackend:
         recv_ms = int(time.time() * 1000)
         ev      = AnswerEvent(player_id=player_id, answer=ans, timestamp_ms=ts_ms, server_received_ms=recv_ms)
 
-        with self._state_lock:
-            if self.state != BuzzerState.LOCKED:
-                print(f"[MQTT] Answer ignored (state={self.state.value}) from P{player_id}")
-                return
-            if self.locked_player != player_id:
-                print(f"[MQTT] Answer ignored (locked=P{self.locked_player}) from P{player_id}")
-                return
+        if self.state != BuzzerState.LOCKED:
+            print(f"[MQTT] Answer ignored (state={self.state.value}) from P{player_id}")
+            return
+        if self.locked_player != player_id:
+            print(f"[MQTT] Answer ignored (locked=P{self.locked_player}) from P{player_id}")
+            return
 
         self._set_state(BuzzerState.ANSWERED)
         self.bridge.answer_received.emit(ev)
@@ -434,64 +435,46 @@ class MQTTBuzzerBackend:
     def start_question(self, question_id: str, max_attempts: int = 1) -> None:
         with self._state_lock:
             self.current_question_id = question_id
-            self.max_attempts        = max(1, int(max_attempts))
-            self.attempt_count       = 0
+            self.max_attempts = max(1, int(max_attempts))
+            self.attempt_count = 0
             self.eliminated_players.clear()
             self.locked_player = None
-        self._set_state(BuzzerState.IDLE)
+            self._set_state(BuzzerState.IDLE)
         self._publish_reset()
 
     def unlock_buzzers(self) -> None:
         with self._state_lock:
             self.locked_player = None
+            self._set_state(BuzzerState.ACTIVE)
         self._publish_reset()
-        self._set_state(BuzzerState.ACTIVE)
 
     def mark_answer_wrong(self, player_id: int) -> None:
-        """Eliminate player and prepare for the next cascade attempt.
+        """Reflect a wrong answer on the hardware layer only.
 
-        NOTE ON attempt_count vs max_attempts
-        ──────────────────────────────────────
-        These two fields are *MQTT-layer bookkeeping only* — they track how
-        many buzzes have occurred from the hardware perspective so the backend
-        knows whether to publish a RESET packet.  The GameEngine is the sole
-        authority on whether another attempt is allowed; HostScreen calls
-        unlock_buzzers() (setting MQTT state to ACTIVE) only when the engine
-        grants it.  Do NOT use these counters to gate game logic outside this
-        class.
-
-        attempt_count is incremented in _handle_buzz (before locking), so
-        after a wrong answer it equals the number of buzzes so far.  We
-        compare against max_attempts to decide whether more attempts remain
-        from the hardware perspective.  Only publish RESET when all attempts
-        are truly exhausted so the hardware lock is not cleared before the
-        engine calls unlock_buzzers() for the next cascade step.
+        The engine is the sole authority on whether another attempt remains.
+        This method therefore never decides progression based on attempt_count.
         """
         with self._state_lock:
             self.eliminated_players.add(int(player_id))
             self.locked_player = None
-
-        if self.attempt_count < self.max_attempts:
-            # More attempts remain — return to IDLE-ready; unlock_buzzers() next
             self._set_state(BuzzerState.IDLE)
-        else:
-            # All attempts exhausted — release hardware and close the question
-            self._publish_reset()
-            self._set_state(BuzzerState.RESULT_SHOWN)
+        self._publish_reset()
 
     def mark_answer_correct(self, player_id: int) -> None:
         with self._state_lock:
             self.locked_player = None
-        self._set_state(BuzzerState.RESULT_SHOWN)
+            self._set_state(BuzzerState.RESULT_SHOWN)
+        self._publish_reset()
 
     def end_question(self) -> None:
         with self._state_lock:
             self.current_question_id = None
-            self.locked_player       = None
+            self.locked_player = None
+            self.attempt_count = 0
+            self.max_attempts = 1
             self.eliminated_players.clear()
-            self.attempt_count       = 0
+            self._set_state(BuzzerState.IDLE)
         self._publish_reset()
-        self._set_state(BuzzerState.IDLE)
 
     # =========================================================================
     # MQTT PUBLISHING
