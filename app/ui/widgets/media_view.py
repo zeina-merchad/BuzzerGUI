@@ -12,8 +12,8 @@ class MediaView(QWidget):
         super().__init__()
 
         self.current_media_type = None
-        self._video_mode        = "fill"   # "fit" | "fill"
-        self._current_pixmap    = None
+        self._video_mode = "fill"   # "fit" | "fill"
+        self._current_pixmap = None
         self._current_image_path = None
 
         main_layout = QVBoxLayout(self)
@@ -28,6 +28,7 @@ class MediaView(QWidget):
             "border: 4px solid #39FF14; border-radius: 16px; padding: 8px; "
             "min-height: 250px; background: rgba(15, 25, 40, 0.6);"
         )
+        self.image_box.setMinimumHeight(250)
         self.image_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         main_layout.addWidget(self.image_box)
 
@@ -36,6 +37,7 @@ class MediaView(QWidget):
         self.video_widget.setStyleSheet(
             "border: 4px solid #39FF14; border-radius: 16px; background: rgba(15, 25, 40, 0.9);"
         )
+        self.video_widget.setMinimumHeight(250)
         self.video_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._apply_video_aspect_mode()
         main_layout.addWidget(self.video_widget)
@@ -43,7 +45,7 @@ class MediaView(QWidget):
 
         # Media player
         self.media_player = QMediaPlayer()
-        self.audio_output  = QAudioOutput()
+        self.audio_output = QAudioOutput()
         self.media_player.setAudioOutput(self.audio_output)
         self.media_player.setVideoOutput(self.video_widget)
 
@@ -62,16 +64,23 @@ class MediaView(QWidget):
             "QPushButton:pressed { background: rgba(57,255,20,0.6); }"
         )
 
-        self.btn_play    = QPushButton("▶ Play");  self.btn_play.setStyleSheet(button_style)
-        self.btn_stop    = QPushButton("■ Stop");  self.btn_stop.setStyleSheet(button_style)
-        self.btn_fitfill = QPushButton("⛶ Fill");  self.btn_fitfill.setStyleSheet(button_style)
+        self.btn_play = QPushButton("▶ Play")
+        self.btn_play.setStyleSheet(button_style)
+
+        self.btn_stop = QPushButton("■ Stop")
+        self.btn_stop.setStyleSheet(button_style)
+
+        self.btn_fitfill = QPushButton("⛶ Fill")
+        self.btn_fitfill.setStyleSheet(button_style)
 
         self.btn_play.clicked.connect(self._toggle_play)
         self.btn_stop.clicked.connect(self._stop_media)
         self.btn_fitfill.clicked.connect(self._toggle_fit_fill)
 
         self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.7);")
+        self.status_label.setStyleSheet(
+            "font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.7);"
+        )
         self.status_label.setAlignment(Qt.AlignCenter)
 
         controls_layout.addWidget(self.btn_play)
@@ -83,42 +92,39 @@ class MediaView(QWidget):
         main_layout.addWidget(self.controls_widget)
         self.controls_widget.hide()
 
-        main_layout.setStretchFactor(self.image_box,       1)
-        main_layout.setStretchFactor(self.video_widget,    1)
+        main_layout.setStretchFactor(self.image_box, 1)
+        main_layout.setStretchFactor(self.video_widget, 1)
         main_layout.setStretchFactor(self.controls_widget, 0)
 
-        # FIX #10: connect errorOccurred with the correct two-argument signature.
-        # QMediaPlayer.errorOccurred emits (QMediaPlayer.Error, str).
-        # The original slot def _on_error(self) took no arguments and would
-        # raise TypeError at runtime whenever a media error occurred.
         self.media_player.playbackStateChanged.connect(self._on_playback_state_changed)
         self.media_player.errorOccurred.connect(self._on_error)
 
         self.hide()
 
-    # -------------------------------------------------------------------------
-    # Public API
-    # -------------------------------------------------------------------------
-
     def clear(self):
         self._stop_media()
-        self.current_media_type   = None
-        self._current_pixmap      = None
-        self._current_image_path  = None
+        self.current_media_type = None
+        self._current_pixmap = None
+        self._current_image_path = None
         self.image_box.setPixmap(QPixmap())
         self.image_box.setText("")
+        self.image_box.setMinimumHeight(250)
+        self.image_box.setMaximumHeight(16777215)
         self._hide_video()
         self.hide()
 
     def set_media(self, media, pack_dir):
         from pathlib import Path
+
         if media is None or media.type.value == "none":
             self.clear()
             return
+
         media_path = (Path(pack_dir) / (media.path or "")).resolve()
         if not media_path.exists():
             self.show_path(media.type.value, media.path or "")
             return
+
         if media.type.value == "image":
             self.show_image(str(media_path))
         elif media.type.value == "video":
@@ -132,9 +138,11 @@ class MediaView(QWidget):
         self.show()
         self._stop_media()
         self._hide_video()
+
         self.image_box.setPixmap(QPixmap())
         icons = {"image": "🖼️", "audio": "🔊", "video": "🎬"}
-        icon  = icons.get(media_type.lower(), "📄")
+        icon = icons.get(media_type.lower(), "📄")
+
         self.image_box.setMinimumHeight(200)
         self.image_box.setMaximumHeight(250)
         self.image_box.setStyleSheet(
@@ -150,13 +158,15 @@ class MediaView(QWidget):
         self.show()
         self._stop_media()
         self._hide_video()
+
         self.current_media_type = "image"
         self.image_box.setText("")
+
         pixmap = QPixmap(image_path)
         if not pixmap.isNull():
-            self.image_box.setMinimumHeight(0)
+            self.image_box.setMinimumHeight(250)
             self.image_box.setMaximumHeight(16777215)
-            self._current_pixmap     = pixmap
+            self._current_pixmap = pixmap
             self._current_image_path = image_path
             self._scale_pixmap_to_box()
             self.image_box.setStyleSheet(
@@ -165,18 +175,23 @@ class MediaView(QWidget):
             )
             self.image_box.show()
             self.controls_widget.hide()
+            self.updateGeometry()
+            self.update()
         else:
-            self._current_pixmap     = None
+            self._current_pixmap = None
             self._current_image_path = None
             self._show_error(f"IMAGE NOT FOUND\n\n{image_path}")
 
     def _scale_pixmap_to_box(self):
         if self._current_pixmap is None:
             return
+
         box_size = self.image_box.size()
-        w = max(box_size.width()  - 30, 200)
+        w = max(box_size.width() - 30, 200)
         h = max(box_size.height() - 30, 150)
-        scaled = self._current_pixmap.scaled(w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled = self._current_pixmap.scaled(
+            w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
         self.image_box.setPixmap(scaled)
 
     def resizeEvent(self, event):
@@ -187,35 +202,55 @@ class MediaView(QWidget):
     def show_video(self, video_path: str):
         self.show()
         self._stop_media()
+
         self.current_media_type = "video"
+
+        self.image_box.setPixmap(QPixmap())
+        self.image_box.setText("")
+        self.image_box.setMinimumHeight(0)
+        self.image_box.setMaximumHeight(16777215)
         self.image_box.hide()
+
+        self.video_widget.setMinimumHeight(250)
         self.video_widget.show()
         self.controls_widget.show()
         self.btn_fitfill.show()
         self._sync_fitfill_button()
+
+        self.video_widget.updateGeometry()
+        self.updateGeometry()
+        self.update()
+
         try:
             from pathlib import Path
             path = Path(video_path)
+
             if not path.exists():
                 self._show_error(f"Video not found: {video_path}")
                 return
+
             url = QUrl.fromLocalFile(str(path.absolute()))
             self.media_player.setSource(url)
+            self.media_player.setVideoOutput(self.video_widget)
             self.status_label.setText(f"Loaded: {path.name}")
             self.media_player.play()
+
         except Exception as e:
             self._show_error(f"Error loading video: {e}")
 
     def show_audio(self, audio_path: str):
         self.show()
         self._stop_media()
+
         self.current_media_type = "audio"
         self.image_box.show()
         self.video_widget.hide()
         self.controls_widget.show()
         self.btn_fitfill.hide()
+
         from pathlib import Path
         path = Path(audio_path)
+
         self.image_box.setMinimumHeight(200)
         self.image_box.setMaximumHeight(250)
         self.image_box.setStyleSheet(
@@ -224,20 +259,19 @@ class MediaView(QWidget):
             "font-size: 18px; font-weight: 700; color: white;"
         )
         self.image_box.setText(f"🔊\n\nAUDIO\n\n{path.name}")
+
         try:
             if not path.exists():
                 self._show_error(f"Audio not found: {audio_path}")
                 return
+
             url = QUrl.fromLocalFile(str(path.absolute()))
             self.media_player.setSource(url)
             self.status_label.setText(f"Loaded: {path.name}")
             self.media_player.play()
+
         except Exception as e:
             self._show_error(f"Error loading audio: {e}")
-
-    # -------------------------------------------------------------------------
-    # Controls
-    # -------------------------------------------------------------------------
 
     def _toggle_play(self):
         if self.media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
@@ -252,14 +286,17 @@ class MediaView(QWidget):
     def _toggle_fit_fill(self):
         if self.current_media_type != "video":
             return
+
         self._video_mode = "fit" if self._video_mode == "fill" else "fill"
         self._apply_video_aspect_mode()
         self._sync_fitfill_button()
 
     def _apply_video_aspect_mode(self):
-        mode = (Qt.AspectRatioMode.KeepAspectRatioByExpanding
-                if self._video_mode == "fill"
-                else Qt.AspectRatioMode.KeepAspectRatio)
+        mode = (
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding
+            if self._video_mode == "fill"
+            else Qt.AspectRatioMode.KeepAspectRatio
+        )
         try:
             self.video_widget.setAspectRatioMode(mode)
         except Exception:
@@ -277,10 +314,6 @@ class MediaView(QWidget):
     def _hide_video(self):
         self.video_widget.hide()
         self.controls_widget.hide()
-
-    # -------------------------------------------------------------------------
-    # Errors + Signals
-    # -------------------------------------------------------------------------
 
     def _show_error(self, message: str):
         self.image_box.show()
@@ -300,6 +333,7 @@ class MediaView(QWidget):
         mode_suffix = ""
         if " | Mode:" in self.status_label.text():
             mode_suffix = " | " + self.status_label.text().split(" | ", 1)[1]
+
         if state == QMediaPlayer.PlaybackState.PlayingState:
             self.btn_play.setText("⏸ Pause")
             self.status_label.setText("Playing..." + mode_suffix)
@@ -310,18 +344,13 @@ class MediaView(QWidget):
             self.btn_play.setText("▶ Play")
             self.status_label.setText("Stopped" + mode_suffix)
 
-    # FIX #10: correct signature — QMediaPlayer.errorOccurred emits (Error, str).
     def _on_error(self, error, error_string: str):
         self._show_error(f"Playback error: {error_string}")
-
-    # -------------------------------------------------------------------------
-    # Cleanup
-    # -------------------------------------------------------------------------
 
     def cleanup(self):
         self._stop_media()
         self.media_player.setSource(QUrl())
-        self.current_media_type  = None
-        self._current_pixmap     = None
+        self.current_media_type = None
+        self._current_pixmap = None
         self._current_image_path = None
         self._hide_video()

@@ -2,7 +2,7 @@ import paho.mqtt.client as mqtt
 import json
 import time
 import threading
-from typing import Optional, Callable, Dict, List
+from typing import Optional, Callable, Dict, List, Set
 from dataclasses import dataclass
 from enum import Enum
 
@@ -144,32 +144,19 @@ class MQTTBuzzerBackend:
     # =========================================================================
 
     def connect(self) -> bool:
-        """Connect to broker.
+        """Connect to broker without blocking the UI thread.
 
-        FIX #8: the busy-wait loop blocks the calling thread.  This is
-        acceptable at startup (before the Qt event loop starts) but must
-        NOT be called again while the event loop is running — doing so
-        freezes the UI for up to 5 seconds.  A guard is added so a second
-        call while already connected returns True immediately.
+        This method now kicks off the paho connection and returns immediately.
+        Success/failure is reflected asynchronously via self.connected and the
+        broker callbacks.
         """
         if self.connected:
             return True
         try:
             print(f"[MQTT] Connecting to {self.broker_host}:{self.broker_port}...")
-            self.client.connect(self.broker_host, self.broker_port, 60)
+            self.client.connect_async(self.broker_host, self.broker_port, 60)
             self.client.loop_start()
-
-            timeout = time.time() + 5
-            while not self.connected and time.time() < timeout:
-                time.sleep(0.05)
-
-            if self.connected:
-                print("[MQTT] ✅ Connected")
-                return True
-
-            print("[MQTT] ❌ Connection timeout")
-            self.client.loop_stop()
-            return False
+            return True
         except Exception as e:
             print(f"[MQTT] ❌ Connection failed: {e}")
             try:

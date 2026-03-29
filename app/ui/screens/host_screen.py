@@ -209,10 +209,11 @@ class CornerPlayerCard(QFrame):
         self.icon.setText(str(self._score))
 
     def _set_connected_icon(self):
+        # Connected/ready should remain visually neutral.
         self.icon.setStyleSheet(self._icon_style(
-            bg=self.color,
+            bg="rgba(85, 85, 85, 0.6)",
             border="none",
-            color="white",
+            color="#cccccc",
             font=70,
         ))
         self.icon.setText(str(self._score))
@@ -237,16 +238,11 @@ class CornerPlayerCard(QFrame):
 
     def set_connected(self, is_connected: bool):
         self.is_hardware_connected = is_connected
-        if is_connected:
-            if not self.is_buzzed and not self.is_eliminated:
-                self._set_connected_icon()
-            self.label.setText(f"P{self.player_id}: READY")
-            self.label.setStyleSheet(self._label_style(self.color))
-        else:
-            if not self.is_buzzed and not self.is_eliminated:
-                self._set_disconnected_icon()
-            self.label.setText(f"P{self.player_id}: WAITING")
-            self.label.setStyleSheet(self._label_style("rgba(100, 100, 100, 0.7)"))
+        if not self.is_buzzed and not self.is_eliminated:
+            # Do not visually distinguish connected vs disconnected in release UI.
+            self._set_disconnected_icon()
+        self.label.setText(f"P{self.player_id}: WAITING")
+        self.label.setStyleSheet(self._label_style("rgba(100, 100, 100, 0.7)"))
 
     def set_eliminated(self, is_eliminated: bool):
         self.is_eliminated = is_eliminated
@@ -255,14 +251,9 @@ class CornerPlayerCard(QFrame):
             self.label.setText(f"P{self.player_id}: ELIMINATED")
             self.label.setStyleSheet(self._label_style("rgba(231, 76, 60, 0.8)"))
         else:
-            if self.is_hardware_connected:
-                self._set_connected_icon()
-                self.label.setText(f"P{self.player_id}: {self._score}pts")
-                self.label.setStyleSheet(self._label_style(self.color))
-            else:
-                self._set_disconnected_icon()
-                self.label.setText(f"P{self.player_id}: WAITING")
-                self.label.setStyleSheet(self._label_style("rgba(100, 100, 100, 0.7)"))
+            self._set_disconnected_icon()
+            self.label.setText(f"P{self.player_id}: WAITING")
+            self.label.setStyleSheet(self._label_style("rgba(100, 100, 100, 0.7)"))
 
     def set_score(self, value: int):
         self._score = int(value)
@@ -273,10 +264,6 @@ class CornerPlayerCard(QFrame):
         elif self.is_buzzed:
             self._set_buzzed_icon()
             self.label.setText(f"P{self.player_id}: BUZZED! ({self._score}pts)")
-            self.label.setStyleSheet(self._label_style(self.color))
-        elif self.is_hardware_connected:
-            self._set_connected_icon()
-            self.label.setText(f"P{self.player_id}: {self._score}pts")
             self.label.setStyleSheet(self._label_style(self.color))
         else:
             self._set_disconnected_icon()
@@ -290,12 +277,7 @@ class CornerPlayerCard(QFrame):
         if locked:
             self._set_buzzed_icon()
         else:
-            # FIX #2: restore to the correct visual state based on connection
-            # status instead of always going grey after a buzz resolves.
-            if self.is_hardware_connected:
-                self._set_connected_icon()
-            else:
-                self._set_disconnected_icon()
+            self._set_disconnected_icon()
         self.set_score(self._score)
 
 
