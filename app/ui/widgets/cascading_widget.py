@@ -10,7 +10,6 @@ class CascadingAttemptsWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.setStyleSheet("QWidget { background: transparent; }")
-        self.setMinimumWidth(520)
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -27,8 +26,8 @@ class CascadingAttemptsWidget(QWidget):
         )
 
         layout = QVBoxLayout(container)
-        layout.setSpacing(12)
-        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(18)
+        layout.setContentsMargins(32, 24, 32, 24)
 
         title = QLabel("ATTEMPT\nSTATUS")
         title.setAlignment(Qt.AlignCenter)
@@ -70,7 +69,7 @@ class CascadingAttemptsWidget(QWidget):
         indicators_widget = QWidget()
         indicators_widget.setStyleSheet("QWidget { background: transparent; }")
         ind_layout = QHBoxLayout(indicators_widget)
-        ind_layout.setContentsMargins(0, 14, 0, 0)
+        ind_layout.setContentsMargins(0, 20, 0, 0)
         ind_layout.setSpacing(18)
         ind_layout.setAlignment(Qt.AlignCenter)
 

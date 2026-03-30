@@ -36,10 +36,6 @@ class AnswerEvent:
     server_received_ms: int
 
 
-# =============================================================================
-# SIGNAL BRIDGE
-# =============================================================================
-
 class MQTTSignalBridge(QObject):
     buzz_received       = Signal(object)   # BuzzEvent
     answer_received     = Signal(object)   # AnswerEvent
@@ -57,11 +53,11 @@ class MQTTBuzzerBackend:
     All Qt/engine interaction goes through Qt signals dispatched to the main thread.
     """
 
-    TOPIC_BUZZ          = "fbz/buzzer/+/buzz"
-    TOPIC_ANSWER        = "fbz/buzzer/+/answer"
-    TOPIC_PONG          = "fbz/buzzer/+/pong"
-    TOPIC_GAME_LOCK     = "fbz/game/lock"
-    TOPIC_GAME_RESET    = "fbz/game/reset"
+    TOPIC_BUZZ = "fbz/buzzer/+/buzz"
+    TOPIC_ANSWER = "fbz/buzzer/+/answer"
+    TOPIC_PONG = "fbz/buzzer/+/pong"
+    TOPIC_GAME_LOCK = "fbz/game/lock"
+    TOPIC_GAME_RESET = "fbz/game/reset"
     TOPIC_GAME_PING_PREFIX = "fbz/game/ping"
 
     _CONN_CHECK_INTERVAL_S = 5.0
@@ -73,8 +69,8 @@ class MQTTBuzzerBackend:
         self.bridge = MQTTSignalBridge()
 
         self.client = mqtt.Client()
-        self.client.on_connect    = self._on_connect
-        self.client.on_message    = self._on_message
+        self.client.on_connect = self._on_connect
+        self.client.on_message = self._on_message
         self.client.on_disconnect = self._on_disconnect
 
         self._state_lock = threading.RLock()
@@ -88,32 +84,27 @@ class MQTTBuzzerBackend:
 
         self.connected_players: Dict[int, float] = {}
 
-        self.heartbeat_timeout = 5.0
+        self.heartbeat_timeout = 10.0
         self.last_heartbeat_sent: Dict[int, float] = {}
         self.last_heartbeat_received: Dict[int, float] = {}
         self.awaiting_pong: Dict[int, bool] = {}
-        # Generation counter — prevents stale timeout threads from emitting
-        # heartbeat_resolved after a newer round has already started.
         self._heartbeat_generation: int = 0
 
         self._known_disconnected: Set[int] = set()
         self._last_conn_check: float = 0.0
 
-        # Callback API (HostScreen assigns these)
-        self.on_buzz_callback:                Optional[Callable] = None
-        self.on_answer_callback:              Optional[Callable] = None
-        self.on_player_connected_callback:    Optional[Callable] = None
+        self.on_buzz_callback: Optional[Callable] = None
+        self.on_answer_callback: Optional[Callable] = None
+        self.on_player_connected_callback: Optional[Callable] = None
         self.on_player_disconnected_callback: Optional[Callable] = None
-        self.on_state_change_callback:        Optional[Callable] = None
+        self.on_state_change_callback: Optional[Callable] = None
         self.on_player_unresponsive_callback: Optional[Callable] = None
 
-        # Wire bridge signals → dispatchers (Qt queued so they land on main thread)
-        self.bridge.buzz_received.connect(self._dispatch_buzz,             Qt.QueuedConnection)
-        self.bridge.answer_received.connect(self._dispatch_answer,         Qt.QueuedConnection)
-        self.bridge.player_connected.connect(self._dispatch_player_connected,    Qt.QueuedConnection)
+        self.bridge.buzz_received.connect(self._dispatch_buzz, Qt.QueuedConnection)
+        self.bridge.answer_received.connect(self._dispatch_answer, Qt.QueuedConnection)
+        self.bridge.player_connected.connect(self._dispatch_player_connected, Qt.QueuedConnection)
         self.bridge.player_disconnected.connect(self._dispatch_player_disconnected, Qt.QueuedConnection)
-        self.bridge.state_changed.connect(self._dispatch_state_changed,    Qt.QueuedConnection)
-        # heartbeat_resolved is connected directly by HostScreen
+        self.bridge.state_changed.connect(self._dispatch_state_changed, Qt.QueuedConnection)
 
     # =========================================================================
     # MAIN-THREAD DISPATCHERS
@@ -144,12 +135,6 @@ class MQTTBuzzerBackend:
     # =========================================================================
 
     def connect(self) -> bool:
-        """Connect to broker without blocking the UI thread.
-
-        This method now kicks off the paho connection and returns immediately.
-        Success/failure is reflected asynchronously via self.connected and the
-        broker callbacks.
-        """
         if self.connected:
             return True
         try:
@@ -168,8 +153,8 @@ class MQTTBuzzerBackend:
     def disconnect(self) -> None:
         if self.connected:
             print("[MQTT] Disconnecting...")
-            self.client.disconnect()   # FIX: send DISCONNECT packet first
-            self.client.loop_stop()    # then halt the background thread
+            self.client.disconnect()
+            self.client.loop_stop()
         self.connected = False
 
     def _on_connect(self, client, userdata, flags, rc) -> None:
@@ -185,7 +170,6 @@ class MQTTBuzzerBackend:
             self.connected = False
             print(f"[MQTT] ❌ Broker connect failed (rc={rc})")
 
-
     def _on_disconnect(self, client, userdata, rc) -> None:
         self.connected = False
 
@@ -198,6 +182,7 @@ class MQTTBuzzerBackend:
             print(f"[MQTT] ⚠ Unexpected disconnect (rc={rc})")
         else:
             print("[MQTT] Disconnected")
+
     def _update_player_connection(self, player_id: int) -> None:
         now = time.time()
         was_connected = player_id in self.connected_players
@@ -209,16 +194,23 @@ class MQTTBuzzerBackend:
         if not was_connected or was_known_disconnected:
             print(f"[MQTT] ✓ Player {player_id} connected")
             self.bridge.player_connected.emit(player_id)
+
     def _passive_disconnect_check(self) -> None:
         now = time.time()
         with self._state_lock:
             if now - self._last_conn_check < self._CONN_CHECK_INTERVAL_S:
                 return
             self._last_conn_check = now
+
+            # Never mark players disconnected while buzzers are live
+            # or while a player is locked answering.
+            if self.state in (BuzzerState.ACTIVE, BuzzerState.LOCKED):
+                return
+
             items = list(self.connected_players.items())
 
         for pid, last_seen in items:
-            if (now - last_seen) > self.heartbeat_timeout:
+            if (now - last_seen) > (self.heartbeat_timeout * 2):
                 should_emit = False
                 with self._state_lock:
                     if pid not in self._known_disconnected:
@@ -227,9 +219,10 @@ class MQTTBuzzerBackend:
                 if should_emit:
                     print(f"[MQTT] ✗ Player {pid} timed out (last seen {now - last_seen:.1f}s ago)")
                     self.bridge.player_disconnected.emit(pid)
+
     def _on_message(self, client, userdata, msg) -> None:
         try:
-            topic   = msg.topic
+            topic = msg.topic
             payload = msg.payload.decode(errors="replace")
             try:
                 data = json.loads(payload)
@@ -255,7 +248,8 @@ class MQTTBuzzerBackend:
 
         except Exception as e:
             print(f"[MQTT] ❌ Error in _on_message: {e}")
-            import traceback; traceback.print_exc()
+            import traceback
+            traceback.print_exc()
 
     # =========================================================================
     # PLAYER CONNECTION TRACKING
@@ -263,39 +257,38 @@ class MQTTBuzzerBackend:
 
     def get_connected_players(self, timeout_seconds: int = 60) -> List[int]:
         now = time.time()
-        return sorted([pid for pid, last_seen in self.connected_players.items()
-                       if (now - last_seen) < timeout_seconds])
+        return sorted([
+            pid for pid, last_seen in self.connected_players.items()
+            if (now - last_seen) < timeout_seconds
+        ])
 
     # =========================================================================
     # HEARTBEAT
     # =========================================================================
 
     def send_heartbeat(self, player_id: int) -> None:
-        now   = time.time()
+        now = time.time()
         topic = f"{self.TOPIC_GAME_PING_PREFIX}/{player_id}"
         self.client.publish(topic, json.dumps({"timestamp": now}))
-        self.last_heartbeat_sent[player_id]  = now
-        self.awaiting_pong[player_id]        = True
+        self.last_heartbeat_sent[player_id] = now
+        self.awaiting_pong[player_id] = True
 
     def _handle_pong(self, player_id: int, data: dict) -> None:
         now = time.time()
         self.last_heartbeat_received[player_id] = now
-        self.awaiting_pong[player_id]           = False
-        self.connected_players[player_id]       = now
+        self.awaiting_pong[player_id] = False
+        self.connected_players[player_id] = now
         self._known_disconnected.discard(player_id)
 
-        # FIX: use awaiting_pong.keys() as the authoritative set of pinged players.
-        # Previously called _expected_player_ids() here which re-reads connected_players
-        # (subject to TOCTOU) and may include late-joining players that were never pinged.
-        targets       = list(self.awaiting_pong.keys())
+        targets = list(self.awaiting_pong.keys())
         still_waiting = [p for p in targets if self.awaiting_pong.get(p, False)]
         if not still_waiting:
             alive_map = {pid: self.check_player_liveliness(pid) for pid in targets}
             self.bridge.heartbeat_resolved.emit(alive_map)
 
     def check_player_liveliness(self, player_id: int) -> bool:
-        now              = time.time()
-        ping_sent_at     = self.last_heartbeat_sent.get(player_id)
+        now = time.time()
+        ping_sent_at = self.last_heartbeat_sent.get(player_id)
         pong_received_at = self.last_heartbeat_received.get(player_id)
 
         if ping_sent_at is not None and pong_received_at is not None:
@@ -355,7 +348,7 @@ class MQTTBuzzerBackend:
         return {pid: self.check_player_liveliness(pid) for pid in targets}
 
     def all_pings_resolved(self, timeout_seconds: int = 10) -> bool:
-        now     = time.time()
+        now = time.time()
         targets = self._expected_player_ids()
         for pid in targets:
             if not self.awaiting_pong.get(pid, False):
@@ -370,37 +363,51 @@ class MQTTBuzzerBackend:
     # =========================================================================
 
     def lock_player(self, player_id: int) -> None:
-        self._publish_lock(int(player_id))
+        pid = int(player_id)
+        with self._state_lock:
+            self.locked_player = pid
+        self._set_state(BuzzerState.LOCKED)
+        self._publish_lock(pid)
 
     # =========================================================================
     # BUZZ / ANSWER HANDLING (MQTT thread)
     # =========================================================================
 
     def _handle_buzz(self, player_id: int, data: dict) -> None:
-        ts_ms   = int(data.get("t_ms", 0))
+        ts_ms = int(data.get("t_ms", 0))
         recv_ms = int(time.time() * 1000)
-        ev      = BuzzEvent(player_id=player_id, timestamp_ms=ts_ms, server_received_ms=recv_ms)
+        ev = BuzzEvent(
+            player_id=player_id,
+            timestamp_ms=ts_ms,
+            server_received_ms=recv_ms
+        )
 
         with self._state_lock:
             current_state = self.state
             locked_player = self.locked_player
+
             if current_state != BuzzerState.ACTIVE:
                 print(f"[MQTT] Buzz ignored (state={current_state.value}) from P{player_id}")
                 return
+
             if locked_player is not None:
                 print(f"[MQTT] Buzz ignored (already locked by P{locked_player})")
                 return
-            self.locked_player = player_id
 
-        self._set_state(BuzzerState.LOCKED)
-        self._publish_lock(player_id)
+        # Do not lock here.
+        # Let HostScreen -> GameEngine decide whether the buzz is valid.
         self.bridge.buzz_received.emit(ev)
 
     def _handle_answer(self, player_id: int, data: dict) -> None:
-        ans     = str(data.get("answer", "")).strip().upper()
-        ts_ms   = int(data.get("t_ms", 0))
+        ans = str(data.get("answer", "")).strip().upper()
+        ts_ms = int(data.get("t_ms", 0))
         recv_ms = int(time.time() * 1000)
-        ev      = AnswerEvent(player_id=player_id, answer=ans, timestamp_ms=ts_ms, server_received_ms=recv_ms)
+        ev = AnswerEvent(
+            player_id=player_id,
+            answer=ans,
+            timestamp_ms=ts_ms,
+            server_received_ms=recv_ms
+        )
 
         with self._state_lock:
             current_state = self.state
@@ -433,12 +440,6 @@ class MQTTBuzzerBackend:
         self._set_state(BuzzerState.ACTIVE)
 
     def mark_answer_wrong(self, player_id: int) -> None:
-        """Clear the current hardware lock after a wrong answer.
-
-        The GameEngine is the single authority for attempts, eliminations,
-        scoring, and whether another unlock is allowed. The MQTT layer only
-        mirrors the transport-facing lock state.
-        """
         with self._state_lock:
             self.locked_player = None
         self._set_state(BuzzerState.IDLE)
@@ -463,8 +464,10 @@ class MQTTBuzzerBackend:
         pid = int(player_id)
         try:
             self.client.publish(self.TOPIC_GAME_LOCK, str(pid))
-            self.client.publish(f"{self.TOPIC_GAME_LOCK}/{pid}",
-                                json.dumps({"id": pid, "ts": time.time()}))
+            self.client.publish(
+                f"{self.TOPIC_GAME_LOCK}/{pid}",
+                json.dumps({"id": pid, "ts": time.time()})
+            )
             print(f"[MQTT] 🔒 LOCK published for P{pid}")
         except Exception as e:
             print(f"[MQTT] ❌ Failed to publish lock: {e}")
@@ -498,9 +501,9 @@ class MQTTBuzzerBackend:
 
     def get_status(self) -> dict:
         return {
-            "connected":         self.connected,
-            "state":             self.state.value,
-            "current_question":  self.current_question_id,
-            "locked_player":     self.locked_player,
+            "connected": self.connected,
+            "state": self.state.value,
+            "current_question": self.current_question_id,
+            "locked_player": self.locked_player,
             "connected_players": self.get_connected_players(timeout_seconds=10),
         }

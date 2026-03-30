@@ -50,7 +50,7 @@ class OptionsView(QWidget):
             text_label.setWordWrap(True)
             text_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             text_label.setStyleSheet(
-                "font-size: 28px; font-weight: 700; color: white; "
+                "font-size: 36px; font-weight: 700; color: white; "
                 "background: transparent; border: none;"
             )
 
@@ -98,7 +98,7 @@ class OptionsView(QWidget):
             "text-decoration: line-through;"
         )
         self._labels[index].setStyleSheet(
-            "font-size: 28px; font-weight: 700; "
+            "font-size: 36px; font-weight: 700; "
             "color: rgba(231, 76, 60, 0.7); "
             "background: transparent; border: none; "
             "text-decoration: line-through;"
@@ -135,7 +135,7 @@ class OptionsView(QWidget):
             "background: transparent; border: none;"
         )
         self._labels[index].setStyleSheet(
-            "font-size: 28px; font-weight: 900; "
+            "font-size: 36px; font-weight: 900; "
             "color: #39FF14; "
             "background: transparent; border: none;"
         )
@@ -160,7 +160,7 @@ class OptionsView(QWidget):
                 "background: transparent; border: none;"
             )
             self._labels[i].setStyleSheet(
-                "font-size: 28px; font-weight: 700; color: white; "
+                "font-size: 36px; font-weight: 700; color: white; "
                 "background: transparent; border: none;"
             )
 

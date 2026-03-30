@@ -438,13 +438,14 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.question.setWordWrap(True)
         self.question.setAlignment(Qt.AlignCenter)
         self.question.setStyleSheet(
-            "font-size: 24px; font-weight: 900; color: white; "
-            "padding: 30px; background: rgba(20, 30, 45, 0.8); "
+            "font-size: 45px; font-weight: 900; color: white; "
+            "padding: 20px; background: rgba(20, 30, 45, 0.8); "
             "border: 3px solid #39FF14; border-radius: 16px; "
-            "min-height: 120px;"
+            "min-height: 180px;"
         )
         center_layout.addWidget(self.question)
 
+        # THIS WAS MISSING
         self.options = OptionsView()
         center_layout.addWidget(self.options)
 
@@ -1005,10 +1006,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         alive_players = sorted(pid for pid, alive in alive_map.items() if alive)
         self.engine.set_active_players(alive_players)
 
-        # First update every card, not only alive ones
-        for pid, card in self.player_cards.items():
-            card.set_connected(pid in alive_players)
-
         if self.round_transition_screen.isVisible():
             btn = self.round_transition_screen.btn_continue
             self._round_transition_has_live_buzzers = len(alive_players) > 0
@@ -1043,6 +1040,27 @@ class HostScreen(RemoteKeyHandler, QWidget):
                 )
             btn.setEnabled(self._round_transition_has_live_buzzers)
             return
+
+        if self.game_started:
+            if alive_players:
+                self.btn_unlock.setEnabled(True)
+                self.btn_unlock.setText("🔓 UNLOCK BUZZERS")
+                self.status_label.setText("⏸️ Buzzers locked - Click UNLOCK when ready")
+                self.status_label.setStyleSheet(
+                    "font-size: 14px; font-weight: 700; color: rgba(255, 193, 7, 1.0); "
+                    "background: rgba(255, 193, 7, 0.2); "
+                    "padding: 12px 20px; border: 2px solid #ffc107; "
+                    "border-radius: 8px;"
+                )
+            else:
+                self.btn_unlock.setEnabled(False)
+                self.btn_unlock.setText("⚠️ NO LIVE BUZZERS")
+                self.status_label.setText("⚠️ No live buzzers detected for this question.")
+                self.status_label.setStyleSheet(
+                    "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
+                    "background: rgba(231, 76, 60, 0.2); "
+                    "padding: 12px 20px; border: 2px solid #e74c3c; border-radius: 8px;"
+                )
 
 
     def _on_attempt_changed(self, attempt_number: int):
@@ -1116,12 +1134,12 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self._heartbeat_in_progress = False
 
         self.buzzers_unlocked = False
-        self.btn_unlock.setEnabled(True)
-        self.btn_unlock.setText("🔓 UNLOCK BUZZERS")
+        self.btn_unlock.setEnabled(False)
+        self.btn_unlock.setText("📡 CHECKING BUZZERS...")
         self.btn_unlock.setStyleSheet(
             "QPushButton { "
-            "background: rgba(255, 193, 7, 0.2); "
-            "border: 3px solid #ffc107; "
+            "background: rgba(93, 219, 255, 0.18); "
+            "border: 3px solid #5ddbff; "
             "border-radius: 8px; "
             "padding: 12px 20px; "
             "font-size: 14px; "
@@ -1129,15 +1147,13 @@ class HostScreen(RemoteKeyHandler, QWidget):
             "color: white; "
             "min-width: 150px; "
             "}"
-            "QPushButton:hover { background: rgba(255, 193, 7, 0.4); }"
-            "QPushButton:pressed { background: rgba(255, 193, 7, 0.6); }"
         )
 
-        self.status_label.setText("⏸️ Buzzers locked - Click UNLOCK when ready")
+        self.status_label.setText("📡 Checking live buzzers before question...")
         self.status_label.setStyleSheet(
-            "font-size: 14px; font-weight: 700; color: rgba(255, 193, 7, 1.0); "
-            "background: rgba(255, 193, 7, 0.2); "
-            "padding: 12px 20px; border: 2px solid #ffc107; "
+            "font-size: 14px; font-weight: 700; color: rgba(93, 219, 255, 1.0); "
+            "background: rgba(93, 219, 255, 0.2); "
+            "padding: 12px 20px; border: 2px solid #5ddbff; "
             "border-radius: 8px;"
         )
 
@@ -1152,6 +1168,18 @@ class HostScreen(RemoteKeyHandler, QWidget):
         if self.mqtt_backend:
             q = self.engine.current_question()
             self.mqtt_backend.start_question(question_id=q.id, max_attempts=q.max_attempts)
+            self._heartbeat_in_progress = True
+            self.mqtt_backend.send_heartbeat_to_all(timeout_seconds=10)
+        else:
+            self.btn_unlock.setEnabled(True)
+            self.btn_unlock.setText("🔓 UNLOCK BUZZERS")
+            self.status_label.setText("⏸️ Buzzers locked - Click UNLOCK when ready")
+            self.status_label.setStyleSheet(
+                "font-size: 14px; font-weight: 700; color: rgba(255, 193, 7, 1.0); "
+                "background: rgba(255, 193, 7, 0.2); "
+                "padding: 12px 20px; border: 2px solid #ffc107; "
+                "border-radius: 8px;"
+            )
 
         self._render_question()
         self._render_scores()
