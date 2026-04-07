@@ -3,7 +3,7 @@ Cascading Attempts Display Widget — scaled for 4K 55" display.
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QFrame
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 
 class CascadingAttemptsWidget(QWidget):
@@ -26,14 +26,14 @@ class CascadingAttemptsWidget(QWidget):
         )
 
         layout = QVBoxLayout(container)
-        layout.setSpacing(18)
-        layout.setContentsMargins(32, 24, 32, 24)
+        layout.setSpacing(6)
+        layout.setContentsMargins(16, 12, 16, 12)
 
         title = QLabel("ATTEMPT\nSTATUS")
         title.setAlignment(Qt.AlignCenter)
         title.setWordWrap(True)
         title.setStyleSheet(
-            "font-size: 26px; font-weight: 900; color: #39FF14; "
+            "font-size: 16px; font-weight: 900; color: #39FF14; "
             "letter-spacing: 1px; background: transparent; border: none;"
         )
         layout.addWidget(title)
@@ -42,8 +42,8 @@ class CascadingAttemptsWidget(QWidget):
         self.attempt_label.setAlignment(Qt.AlignCenter)
         self.attempt_label.setWordWrap(True)
         self.attempt_label.setStyleSheet(
-            "font-size: 60px; font-weight: 900; color: white; "
-            "background: transparent; border: none; padding: 8px;"
+            "font-size: 34px; font-weight: 900; color: white; "
+            "background: transparent; border: none; padding: 2px;"
         )
         layout.addWidget(self.attempt_label)
 
@@ -51,7 +51,7 @@ class CascadingAttemptsWidget(QWidget):
         self.points_label.setAlignment(Qt.AlignCenter)
         self.points_label.setWordWrap(True)
         self.points_label.setStyleSheet(
-            "font-size: 32px; font-weight: 700; color: #ffd700; "
+            "font-size: 18px; font-weight: 700; color: #ffd700; "
             "background: transparent; border: none;"
         )
         layout.addWidget(self.points_label)
@@ -60,8 +60,8 @@ class CascadingAttemptsWidget(QWidget):
         self.players_label.setAlignment(Qt.AlignCenter)
         self.players_label.setWordWrap(True)
         self.players_label.setStyleSheet(
-            "font-size: 24px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
-            "background: transparent; border: none; padding-top: 4px;"
+            "font-size: 14px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
+            "background: transparent; border: none; padding-top: 2px;"
         )
         layout.addWidget(self.players_label)
 
@@ -69,22 +69,23 @@ class CascadingAttemptsWidget(QWidget):
         indicators_widget = QWidget()
         indicators_widget.setStyleSheet("QWidget { background: transparent; }")
         ind_layout = QHBoxLayout(indicators_widget)
-        ind_layout.setContentsMargins(0, 20, 0, 0)
-        ind_layout.setSpacing(18)
+        ind_layout.setContentsMargins(0, 6, 0, 0)
+        ind_layout.setSpacing(8)
         ind_layout.setAlignment(Qt.AlignCenter)
 
         self.player_indicators = {}
         for i in range(1, 5):
             ind = QLabel(f"P{i}")
             ind.setAlignment(Qt.AlignCenter)
-            ind.setFixedSize(80, 80)
+            ind.setFixedSize(44, 44)
             ind.setStyleSheet(self._idle_indicator_style())
             self.player_indicators[i] = ind
             ind_layout.addWidget(ind)
 
         layout.addWidget(indicators_widget)
         main_layout.addWidget(container)
-        self.hide()
+        self.container = container
+        self.container.hide()  # hide content but outer widget keeps its space
 
     # ------------------------------------------------------------------
     # Style helpers
@@ -94,10 +95,10 @@ class CascadingAttemptsWidget(QWidget):
         return (
             "QLabel { "
             "background: rgba(255, 255, 255, 0.1); "
-            "border: 3px solid rgba(255, 255, 255, 0.3); "
-            "border-radius: 40px; "
+            "border: 2px solid rgba(255, 255, 255, 0.3); "
+            "border-radius: 22px; "
             "color: rgba(255, 255, 255, 0.5); "
-            "font-size: 28px; font-weight: 900; "
+            "font-size: 14px; font-weight: 900; "
             "}"
         )
 
@@ -105,10 +106,10 @@ class CascadingAttemptsWidget(QWidget):
         return (
             "QLabel { "
             "background: rgba(231, 76, 60, 0.3); "
-            "border: 3px solid #e74c3c; "
-            "border-radius: 40px; "
+            "border: 2px solid #e74c3c; "
+            "border-radius: 22px; "
             "color: #e74c3c; "
-            "font-size: 28px; font-weight: 900; "
+            "font-size: 14px; font-weight: 900; "
             "}"
         )
 
@@ -116,31 +117,36 @@ class CascadingAttemptsWidget(QWidget):
         return (
             "QLabel { "
             "background: rgba(57, 255, 20, 0.2); "
-            "border: 3px solid #39FF14; "
-            "border-radius: 40px; "
+            "border: 2px solid #39FF14; "
+            "border-radius: 22px; "
             "color: #39FF14; "
-            "font-size: 28px; font-weight: 900; "
+            "font-size: 14px; font-weight: 900; "
             "}"
         )
 
     def _attempt_label_style(self, color: str):
         return (
-            f"font-size: 60px; font-weight: 900; color: {color}; "
-            f"background: transparent; border: none; padding: 4px;"
+            f"font-size: 34px; font-weight: 900; color: {color}; "
+            f"background: transparent; border: none; padding: 2px;"
         )
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def update_attempt(self, attempt_number: int, points_available: int,
-                       players_remaining: list, active_players: list = None):
+    def update_attempt(
+        self,
+        attempt_number: int,
+        points_available: int,
+        players_remaining: list,
+        active_players: list = None,
+    ):
         if active_players is None:
             all_players = {1, 2, 3, 4}
         else:
             all_players = set(active_players)
 
-        self.show()
+        self.container.show()
 
         self.attempt_label.setText(f"{self._ordinal(attempt_number)}\nATTEMPT")
 
@@ -151,7 +157,9 @@ class CascadingAttemptsWidget(QWidget):
         if num == 0:
             self.players_label.setText("NO PLAYERS\nREMAINING")
         elif num == 1:
-            self.players_label.setText(f"1 PLAYER\nCAN ATTEMPT\n(P{players_remaining[0]})")
+            self.players_label.setText(
+                f"1 PLAYER\nCAN ATTEMPT\n(P{players_remaining[0]})"
+            )
         else:
             plist = ", ".join(f"P{p}" for p in players_remaining)
             self.players_label.setText(f"{num} PLAYERS\nCAN ATTEMPT\n({plist})")
@@ -170,7 +178,7 @@ class CascadingAttemptsWidget(QWidget):
         self.attempt_label.setStyleSheet(self._attempt_label_style(color))
 
     def reset(self):
-        self.hide()
+        self.container.hide()
         for pid, ind in self.player_indicators.items():
             ind.setText(f"P{pid}")
             ind.setStyleSheet(self._idle_indicator_style())

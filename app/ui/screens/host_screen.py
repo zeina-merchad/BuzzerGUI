@@ -1,35 +1,44 @@
 # app/ui/screens/host_screen.py
+import os
+import sys
 from typing import Optional
-from PySide6.QtGui import QPixmap
+
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QMessageBox, QFrame, QGridLayout, QDialog
+    QDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
-import sys, os
+
 from app.core.engine import GameEngine
+from app.core.sound_manager import create_sound_manager
 from app.core.state import Phase
 from app.hardware.mqtt_buzzer import MQTTBuzzerBackend
-from app.core.sound_manager import create_sound_manager
-
-from app.ui.widgets.timer_widget import TimerWidget
-from app.ui.widgets.options_view import OptionsView
-from app.ui.widgets.media_view import MediaView
-from app.ui.widgets.cascading_widget import CascadingAttemptsWidget
-from app.ui.screens.winner_screen import WinnerScreen
 from app.ui.screens.round_transition_screen import RoundTransitionScreen
+from app.ui.screens.winner_screen import WinnerScreen
+from app.ui.widgets.cascading_widget import CascadingAttemptsWidget
+from app.ui.widgets.media_view import MediaView
+from app.ui.widgets.options_view import OptionsView
+from app.ui.widgets.timer_widget import TimerWidget
 
 # Remote control key bindings (Rii i7 via USB dongle)
 try:
-    from app.ui.remote_config import REMOTE_KEYS, REQUIRE_MODIFIER, MODIFIER_KEY
+    from app.ui.remote_config import MODIFIER_KEY, REMOTE_KEYS, REQUIRE_MODIFIER
 except ImportError:
     REMOTE_KEYS = {
-        "start_game":     Qt.Key.Key_MediaPlay,
+        "start_game": Qt.Key.Key_MediaPlay,
         "unlock_buzzers": Qt.Key.Key_Return,
-        "next_question":  Qt.Key.Key_MediaNext,
-        "prev_question":  Qt.Key.Key_MediaPrevious,
-        "reset_game":     Qt.Key.Key_MediaStop,
-        "bonus_point":    Qt.Key.Key_HomePage,
+        "next_question": Qt.Key.Key_MediaNext,
+        "prev_question": Qt.Key.Key_MediaPrevious,
+        "reset_game": Qt.Key.Key_MediaStop,
+        "bonus_point": Qt.Key.Key_HomePage,
     }
     REQUIRE_MODIFIER = False
     MODIFIER_KEY = Qt.KeyboardModifier.NoModifier
@@ -157,35 +166,35 @@ class CornerPlayerCard(QFrame):
         }
         self.color = self.team_colors.get(player_id, "#888888")
 
-        self.setFixedSize(280, 320)
+        self.setMinimumSize(160, 220)
+        self.setMaximumWidth(220)
         self.setStyleSheet("QFrame { background: transparent; border: none; }")
 
         self.icon = QLabel()
         self.icon.setAlignment(Qt.AlignCenter)
-        self.icon.setFixedSize(200, 200)
+        self.icon.setFixedSize(140, 140)
         self._set_disconnected_icon()
 
         self.label = QLabel(f"P{player_id}: WAITING")
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setStyleSheet(
-            "font-size: 22px; font-weight: 900; color: white; "
+            "font-size: 15px; font-weight: 900; color: white; "
             "background: rgba(100, 100, 100, 0.7); "
-            "padding: 12px 18px; border-radius: 10px;"
+            "padding: 6px 10px; border-radius: 8px;"
         )
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
-        lay.setAlignment(Qt.AlignCenter)
-        lay.addWidget(self.icon, alignment=Qt.AlignCenter)
-        lay.addWidget(self.label)
+        lay.setSpacing(4)
+        lay.addWidget(self.icon, alignment=Qt.AlignHCenter)
+        lay.addWidget(self.label, alignment=Qt.AlignHCenter)
 
     def _icon_style(self, bg: str, border: str, color: str, font: int) -> str:
         return (
             f"QLabel {{ "
             f"background: {bg}; "
             f"border: {border}; "
-            f"border-radius: 100px; "
+            f"border-radius: 70px; "
             f"color: {color}; "
             f"font-size: {font}px; "
             f"font-weight: 900; "
@@ -194,46 +203,53 @@ class CornerPlayerCard(QFrame):
 
     def _label_style(self, bg: str) -> str:
         return (
-            f"font-size: 22px; font-weight: 900; color: white; "
+            f"font-size: 15px; font-weight: 900; color: white; "
             f"background: {bg}; "
-            f"padding: 12px 18px; border-radius: 10px;"
+            f"padding: 6px 10px; border-radius: 8px;"
         )
 
     def _set_disconnected_icon(self):
-        self.icon.setStyleSheet(self._icon_style(
-            bg="rgba(85, 85, 85, 0.6)",
-            border="none",
-            color="#cccccc",
-            font=70,
-        ))
+        self.icon.setStyleSheet(
+            self._icon_style(
+                bg="rgba(85, 85, 85, 0.6)",
+                border="none",
+                color="#cccccc",
+                font=48,
+            )
+        )
         self.icon.setText(str(self._score))
 
     def _set_connected_icon(self):
-        # Connected/ready should remain visually neutral.
-        self.icon.setStyleSheet(self._icon_style(
-            bg="rgba(85, 85, 85, 0.6)",
-            border="none",
-            color="#cccccc",
-            font=70,
-        ))
+        self.icon.setStyleSheet(
+            self._icon_style(
+                bg="rgba(85, 85, 85, 0.6)",
+                border="none",
+                color="#cccccc",
+                font=48,
+            )
+        )
         self.icon.setText(str(self._score))
 
     def _set_buzzed_icon(self):
-        self.icon.setStyleSheet(self._icon_style(
-            bg=self.color,
-            border="none",
-            color="white",
-            font=70,
-        ))
+        self.icon.setStyleSheet(
+            self._icon_style(
+                bg=self.color,
+                border="none",
+                color="white",
+                font=48,
+            )
+        )
         self.icon.setText(str(self._score))
 
     def _set_eliminated_icon(self):
-        self.icon.setStyleSheet(self._icon_style(
-            bg="rgba(231, 76, 60, 0.4)",
-            border="none",
-            color="#e74c3c",
-            font=70,
-        ))
+        self.icon.setStyleSheet(
+            self._icon_style(
+                bg="rgba(231, 76, 60, 0.4)",
+                border="none",
+                color="#e74c3c",
+                font=48,
+            )
+        )
         self.icon.setText(str(self._score))
 
     def set_connected(self, is_connected: bool):
@@ -304,7 +320,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         self.round_transition_screen = RoundTransitionScreen(parent=self)
         self.round_transition_screen.hide()
-        self.round_transition_screen.btn_continue.clicked.connect(self._continue_to_next_round)
+        self.round_transition_screen.btn_continue.clicked.connect(
+            self._continue_to_next_round
+        )
 
         self.setFocusPolicy(Qt.StrongFocus)
         self.setStyleSheet("QWidget { background: #0d1b2a; }")
@@ -329,29 +347,29 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 20, 20, 20)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-
-        game_grid = QGridLayout()
-        game_grid.setHorizontalSpacing(20)
-        game_grid.setVerticalSpacing(15)
 
         self.player_cards = {}
         self._create_logo_label()
 
         left_column, right_column = self._build_player_columns()
-        game_grid.addWidget(left_column, 0, 0, 3, 1)
-        game_grid.addWidget(right_column, 0, 2, 3, 1)
-
         center_widget = self._build_center_area()
-        game_grid.addWidget(center_widget, 0, 1, 3, 1)
 
-        game_grid.setColumnStretch(0, 1)
-        game_grid.setColumnStretch(1, 3)
-        game_grid.setColumnStretch(2, 1)
+        main_row = QHBoxLayout()
+        main_row.setSpacing(8)
+        main_row.setContentsMargins(0, 0, 0, 0)
+        main_row.addWidget(left_column, stretch=1)
+        main_row.addWidget(center_widget, stretch=3)
+        main_row.addWidget(right_column, stretch=1)
 
-        root.addLayout(game_grid, stretch=1)
-        root.addWidget(self._build_control_panel())
+        root.addLayout(main_row, stretch=1)
+
+        # Full-width bottom bar with phase label left, buttons centred
+        bottom_row = QHBoxLayout()
+        bottom_row.setContentsMargins(0, 6, 0, 6)
+        bottom_row.addWidget(self._build_control_panel())
+        root.addLayout(bottom_row)
 
         self.correct_flash = FlashOverlay(self)
         self.correct_flash.hide()
@@ -359,44 +377,57 @@ class HostScreen(RemoteKeyHandler, QWidget):
     def _create_logo_label(self):
         self.logo_label = QLabel()
         self.logo_label.setPixmap(
-               QPixmap(self.resource_path("app/ui/screens/logo_full.png")).scaled(
-                320, 320, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            QPixmap(self.resource_path("app/ui/screens/logo_full.png")).scaled(
+                260, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+        )
         self.logo_label.setAlignment(Qt.AlignCenter)
-        self.logo_label.setFixedSize(320, 320)
-        self.logo_label.setStyleSheet("QLabel { background: transparent; border: none; }")
+        self.logo_label.setFixedSize(260, 260)
+        self.logo_label.setStyleSheet(
+            "QLabel { background: transparent; border: none; }"
+        )
 
     def _build_player_columns(self):
+        from PySide6.QtWidgets import QSizePolicy as QSP
+
         left_column = QWidget()
         left_column.setStyleSheet("QWidget { background: transparent; }")
+        left_column.setSizePolicy(QSP.Policy.Preferred, QSP.Policy.Expanding)
         left_layout = QVBoxLayout(left_column)
-        left_layout.setSpacing(20)
+        left_layout.setSpacing(0)
         left_layout.setContentsMargins(0, 0, 0, 0)
 
         self.player_cards[1] = CornerPlayerCard(1)
-        left_layout.addWidget(self.player_cards[1], alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.player_cards[1], 0, Qt.AlignHCenter)
+
         left_layout.addStretch(1)
 
         self.cascading_widget = CascadingAttemptsWidget()
-        left_layout.addWidget(self.cascading_widget, alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.cascading_widget, 0, Qt.AlignHCenter)
+
         left_layout.addStretch(1)
 
         self.player_cards[3] = CornerPlayerCard(3)
-        left_layout.addWidget(self.player_cards[3], alignment=Qt.AlignCenter)
+        left_layout.addWidget(self.player_cards[3], 0, Qt.AlignHCenter)
 
         right_column = QWidget()
         right_column.setStyleSheet("QWidget { background: transparent; }")
+        right_column.setSizePolicy(QSP.Policy.Preferred, QSP.Policy.Expanding)
         right_layout = QVBoxLayout(right_column)
-        right_layout.setSpacing(20)
+        right_layout.setSpacing(0)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         self.player_cards[2] = CornerPlayerCard(2)
-        right_layout.addWidget(self.player_cards[2], alignment=Qt.AlignCenter)
+        right_layout.addWidget(self.player_cards[2], 0, Qt.AlignHCenter)
+
         right_layout.addStretch(1)
-        right_layout.addWidget(self.logo_label, alignment=Qt.AlignCenter)
+
+        right_layout.addWidget(self.logo_label, 0, Qt.AlignHCenter)
+
         right_layout.addStretch(1)
 
         self.player_cards[4] = CornerPlayerCard(4)
-        right_layout.addWidget(self.player_cards[4], alignment=Qt.AlignCenter)
+        right_layout.addWidget(self.player_cards[4], 0, Qt.AlignHCenter)
 
         return left_column, right_column
 
@@ -405,8 +436,8 @@ class HostScreen(RemoteKeyHandler, QWidget):
         center_widget.setStyleSheet("QWidget { background: transparent; }")
         center_widget.setMaximumWidth(1000)
         center_layout = QVBoxLayout(center_widget)
-        center_layout.setSpacing(15)
-        center_layout.setContentsMargins(60, 0, 60, 0)
+        center_layout.setSpacing(8)
+        center_layout.setContentsMargins(20, 0, 20, 0)
 
         timer_row = QWidget()
         timer_row.setStyleSheet("QWidget { background: transparent; }")
@@ -438,10 +469,10 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.question.setWordWrap(True)
         self.question.setAlignment(Qt.AlignCenter)
         self.question.setStyleSheet(
-            "font-size: 45px; font-weight: 900; color: white; "
-            "padding: 20px; background: rgba(20, 30, 45, 0.8); "
+            "font-size: 32px; font-weight: 900; color: white; "
+            "padding: 12px; background: rgba(20, 30, 45, 0.8); "
             "border: 3px solid #39FF14; border-radius: 16px; "
-            "min-height: 180px;"
+            "min-height: 120px;"
         )
         center_layout.addWidget(self.question)
 
@@ -465,17 +496,19 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         control_layout = QHBoxLayout(control_panel)
         control_layout.setSpacing(10)
+        control_layout.setContentsMargins(20, 10, 20, 10)
 
         button_style = (
             "QPushButton { "
             "background: rgba(57, 255, 20, 0.15); "
             "border: 2px solid #39FF14; "
             "border-radius: 8px; "
-            "padding: 12px 20px; "
+            "padding: 8px 18px; "
             "font-size: 14px; "
             "font-weight: 900; "
             "color: white; "
-            "min-width: 100px; "
+            "min-width: 110px; "
+            "min-height: 38px; "
             "}"
             "QPushButton:hover { background: rgba(57, 255, 20, 0.3); }"
             "QPushButton:pressed { background: rgba(57, 255, 20, 0.5); }"
@@ -488,30 +521,27 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         self.phase_label = QLabel("PHASE: IDLE")
         self.phase_label.setStyleSheet(
-            "font-size: 14px; font-weight: 900; color: white; "
+            "font-size: 12px; font-weight: 900; color: white; "
             "background: rgba(57, 255, 20, 0.2); "
-            "padding: 12px 20px; border: 2px solid #39FF14; border-radius: 8px;"
+            "padding: 8px 14px; border: 2px solid #39FF14; border-radius: 8px;"
         )
 
         self.btn_start_game = QPushButton("🎮 START GAME")
         self.btn_start_game.setStyleSheet(
             "QPushButton { "
             "background: rgba(57, 255, 20, 0.3); "
-            "border: 3px solid #39FF14; "
+            "border: 2px solid #39FF14; "
             "border-radius: 8px; "
-            "padding: 15px 30px; "
-            "font-size: 16px; "
+            "padding: 8px 20px; "
+            "font-size: 14px; "
             "font-weight: 900; "
             "color: white; "
-            "min-width: 150px; "
+            "min-width: 130px; "
+            "min-height: 38px; "
             "}"
             "QPushButton:hover { background: rgba(57, 255, 20, 0.5); }"
             "QPushButton:pressed { background: rgba(57, 255, 20, 0.7); }"
-            "QPushButton:disabled { "
-            "background: rgba(100, 100, 100, 0.2); "
-            "border-color: #666; "
-            "color: #666; "
-            "}"
+            "QPushButton:disabled { background: rgba(100,100,100,0.2); border-color: #666; color: #666; }"
         )
         self.btn_start_game.clicked.connect(self._start_game)
 
@@ -519,21 +549,18 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.btn_unlock.setStyleSheet(
             "QPushButton { "
             "background: rgba(255, 193, 7, 0.2); "
-            "border: 3px solid #ffc107; "
+            "border: 2px solid #ffc107; "
             "border-radius: 8px; "
-            "padding: 12px 20px; "
+            "padding: 8px 18px; "
             "font-size: 14px; "
             "font-weight: 900; "
             "color: white; "
-            "min-width: 150px; "
+            "min-width: 130px; "
+            "min-height: 38px; "
             "}"
             "QPushButton:hover { background: rgba(255, 193, 7, 0.4); }"
             "QPushButton:pressed { background: rgba(255, 193, 7, 0.6); }"
-            "QPushButton:disabled { "
-            "background: rgba(100, 100, 100, 0.2); "
-            "border-color: #666; "
-            "color: #666; "
-            "}"
+            "QPushButton:disabled { background: rgba(100,100,100,0.2); border-color: #666; color: #666; }"
         )
         self.btn_unlock.clicked.connect(self._unlock_buzzers)
         self.btn_unlock.setEnabled(False)
@@ -545,69 +572,68 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.btn_next.setEnabled(False)
         self.btn_next.hide()
 
-        self.status_label = QLabel("Waiting for players...")
-        self.status_label.setStyleSheet(
-            "font-size: 14px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
-            "background: rgba(57, 255, 20, 0.15); "
-            "padding: 12px 20px; border: 2px solid rgba(57, 255, 20, 0.3); "
-            "border-radius: 8px;"
+        self.btn_bonus = QPushButton("⭐ BONUS POINT")
+        self.btn_bonus.setStyleSheet(
+            "QPushButton { "
+            "background: rgba(255, 215, 0, 0.2); "
+            "border: 2px solid #ffd700; "
+            "border-radius: 8px; "
+            "padding: 8px 18px; "
+            "font-size: 14px; "
+            "font-weight: 900; "
+            "color: #ffd700; "
+            "min-width: 120px; "
+            "min-height: 38px; "
+            "}"
+            "QPushButton:hover { background: rgba(255, 215, 0, 0.4); }"
+            "QPushButton:pressed { background: rgba(255, 215, 0, 0.6); }"
+            "QPushButton:disabled { background: rgba(100,100,100,0.2); border-color: #666; color: #666; }"
         )
-        self.status_label.hide()
+        self.btn_bonus.clicked.connect(self._award_bonus_point)
 
         self.btn_reset = QPushButton("🔄 RESET GAME")
         self.btn_reset.setStyleSheet(button_style)
         self.btn_reset.clicked.connect(self._reset_game)
 
         self.help_btn = QPushButton("ℹ️")
-        self.help_btn.setFixedSize(45, 45)
+        self.help_btn.setFixedSize(38, 38)
         self.help_btn.setStyleSheet(
             "QPushButton { "
             "background: rgba(52, 152, 219, 0.3); "
             "border: 2px solid #3498db; "
-            "border-radius: 22px; "
-            "font-size: 20px; "
+            "border-radius: 19px; "
+            "font-size: 16px; "
             "color: white; "
             "}"
             "QPushButton:hover { background: rgba(52, 152, 219, 0.5); }"
         )
         self.help_btn.clicked.connect(self._show_help)
 
-        self.btn_bonus = QPushButton("⭐ BONUS POINT")
-        self.btn_bonus.setStyleSheet(
-            "QPushButton { "
-            "background: rgba(255, 215, 0, 0.2); "
-            "border: 3px solid #ffd700; "
-            "border-radius: 8px; "
-            "padding: 12px 20px; "
-            "font-size: 14px; "
-            "font-weight: 900; "
-            "color: #ffd700; "
-            "min-width: 120px; "
-            "}"
-            "QPushButton:hover { background: rgba(255, 215, 0, 0.4); }"
-            "QPushButton:pressed { background: rgba(255, 215, 0, 0.6); }"
-            "QPushButton:disabled { "
-            "background: rgba(100, 100, 100, 0.2); "
-            "border-color: #666; "
-            "color: #666; "
-            "}"
+        self.status_label = QLabel("Waiting for players...")
+        self.status_label.setStyleSheet(
+            "font-size: 13px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
+            "background: rgba(57, 255, 20, 0.15); "
+            "padding: 8px 14px; border: 2px solid rgba(57, 255, 20, 0.3); "
+            "border-radius: 8px;"
         )
-        self.btn_bonus.clicked.connect(self._award_bonus_point)
+        self.status_label.hide()
 
+        # ── phase label left | stretch | buttons | stretch ───────────────────
         control_layout.addWidget(self.phase_label)
         control_layout.addWidget(self.status_label)
-        control_layout.addStretch()
+        control_layout.addStretch(1)
         control_layout.addWidget(self.btn_start_game)
         control_layout.addWidget(self.btn_unlock)
         control_layout.addWidget(self.btn_next)
         control_layout.addWidget(self.btn_bonus)
         control_layout.addWidget(self.btn_reset)
         control_layout.addWidget(self.help_btn)
+        control_layout.addStretch(1)
 
         return control_panel
 
     def resource_path(self, rel: str) -> str:
-        if getattr(sys, 'frozen', False):
+        if getattr(sys, "frozen", False):
             base = os.path.dirname(sys.executable)
             internal = os.path.join(base, "_internal")
             path = os.path.join(internal, rel)
@@ -634,7 +660,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.engine.attempt_changed.connect(self._on_attempt_changed)
         self.engine.attempt_failed.connect(self._on_attempt_failed)
 
-        if hasattr(self.engine, 'question_advanced'):
+        if hasattr(self.engine, "question_advanced"):
             self.engine.question_advanced.connect(self._on_engine_question_advanced)
 
     def _grey_out_all_cards(self):
@@ -684,7 +710,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
     # =========================================================================
 
     def _start_game(self):
-        q_list = getattr(self.engine, "questions", None) or getattr(self.engine, "_questions", None)
+        q_list = getattr(self.engine, "questions", None) or getattr(
+            self.engine, "_questions", None
+        )
         if not q_list:
             QMessageBox.warning(
                 self,
@@ -719,7 +747,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
     def _update_round_badge(self):
         if self.engine.cfg.rounds > 1:
-            self.round_badge.setText(f"ROUND {self.current_round} / {self.engine.cfg.rounds}")
+            self.round_badge.setText(
+                f"ROUND {self.current_round} / {self.engine.cfg.rounds}"
+            )
             self.round_badge.show()
         else:
             self.round_badge.hide()
@@ -749,22 +779,24 @@ class HostScreen(RemoteKeyHandler, QWidget):
             # of a round, i.e. questions_answered is an exact multiple of qpr AND
             # we are not yet at the very last question of the game (which ends the game).
             questions_answered = self.engine.current_q_idx + 1
-            if (questions_answered % qpr == 0 and
-                    questions_answered < len(self.engine.questions)):
+            if questions_answered % qpr == 0 and questions_answered < len(
+                self.engine.questions
+            ):
                 round_just_completed = questions_answered // qpr
                 if round_just_completed < self.engine.cfg.rounds:
-                    self._show_round_transition(round_just_completed, round_just_completed + 1)
+                    self._show_round_transition(
+                        round_just_completed, round_just_completed + 1
+                    )
                     return
 
         self.engine.next_question()
-
 
     def _reset_game(self):
         reply = QMessageBox.question(
             self,
             "Reset Game",
             "Are you sure you want to reset the game? All scores will be lost.",
-            QMessageBox.Yes | QMessageBox.No
+            QMessageBox.Yes | QMessageBox.No,
         )
 
         if reply != QMessageBox.Yes:
@@ -845,14 +877,20 @@ class HostScreen(RemoteKeyHandler, QWidget):
                 attempted = set(getattr(self.engine, "players_attempted", set()))
                 q_idx = self.engine.current_q_idx
                 q_answered = q_idx in self.engine.answered_questions
-                attempt_records = getattr(self.engine, 'attempt_records', [])
+                attempt_records = getattr(self.engine, "attempt_records", [])
 
                 if len(attempted) == 0 and q_answered:
-                    self.status_label.setText("⏰ Time's up! No one buzzed. Click NEXT to continue.")
+                    self.status_label.setText(
+                        "⏰ Time's up! No one buzzed. Click NEXT to continue."
+                    )
                 elif q_answered and any(r.is_correct for r in attempt_records):
-                    self.status_label.setText("✅ Question complete. Click NEXT to continue.")
+                    self.status_label.setText(
+                        "✅ Question complete. Click NEXT to continue."
+                    )
                 else:
-                    self.status_label.setText("❌ All attempts exhausted! Click NEXT to continue.")
+                    self.status_label.setText(
+                        "❌ All attempts exhausted! Click NEXT to continue."
+                    )
 
                 self.status_label.setStyleSheet(
                     "font-size: 14px; font-weight: 700; color: rgba(255, 193, 7, 1.0); "
@@ -903,7 +941,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.buzzers_unlocked = False
             self.btn_unlock.setEnabled(False)
 
-            self.status_label.setText(f"🛑 Player {buzzer_id} buzzed! Waiting for answer...")
+            self.status_label.setText(
+                f"🛑 Player {buzzer_id} buzzed! Waiting for answer..."
+            )
             self.status_label.setStyleSheet(
                 "font-size: 14px; font-weight: 700; color: rgba(93, 219, 255, 1.0); "
                 "background: rgba(93, 219, 255, 0.2); "
@@ -911,13 +951,12 @@ class HostScreen(RemoteKeyHandler, QWidget):
                 "border-radius: 8px;"
             )
 
-            if self.mqtt_backend and hasattr(self.mqtt_backend, 'lock_player'):
+            if self.mqtt_backend and hasattr(self.mqtt_backend, "lock_player"):
                 self.mqtt_backend.lock_player(buzzer_id)
 
         else:
             for card in self.player_cards.values():
                 card.highlight_locked(False)
-
 
     def _on_attempt_failed(self, player_id: int, attempt_number: int):
         if player_id in self.player_cards:
@@ -928,7 +967,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         # case _auto_judge_answer already called mark_answer_wrong and ran the
         # UI update via _handle_wrong_answer_ui — skip everything here to
         # avoid double-calling MQTT and double-triggering SFX/unlock logic.
-        if getattr(self, '_answer_judged_by_button', False):
+        if getattr(self, "_answer_judged_by_button", False):
             return
 
         # Timeout path (answer timer expired) — MQTT and UI are our
@@ -949,7 +988,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
             return
 
         player_id = buzz_event.player_id
-        accepted = self.engine.on_buzz(player_id, buzz_event.timestamp_ms, buzz_event.server_received_ms)
+        accepted = self.engine.on_buzz(
+            player_id, buzz_event.timestamp_ms, buzz_event.server_received_ms
+        )
 
         if accepted:
             print(f"✅ Buzz accepted from Player {player_id}")
@@ -974,7 +1015,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         if player_id in self.player_cards:
             self.player_cards[player_id].set_connected(True)
 
-
     def _on_player_disconnected(self, player_id: int):
         self.engine.unregister_active_player(player_id)
 
@@ -988,14 +1028,18 @@ class HostScreen(RemoteKeyHandler, QWidget):
             if player_id not in self.engine.players_attempted:
                 card.set_eliminated(False)
 
-        if self.engine.phase == Phase.SHOW_QUESTION and not self.engine.get_players_remaining():
-            self.status_label.setText("⚠️ No active players remaining for this question.")
+        if (
+            self.engine.phase == Phase.SHOW_QUESTION
+            and not self.engine.get_players_remaining()
+        ):
+            self.status_label.setText(
+                "⚠️ No active players remaining for this question."
+            )
             self.status_label.setStyleSheet(
                 "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
                 "background: rgba(231, 76, 60, 0.2); "
                 "padding: 12px 20px; border: 2px solid #e74c3c; border-radius: 8px;"
             )
-
 
     def _apply_heartbeat_results(self, alive_map: dict):
         self._heartbeat_in_progress = False
@@ -1020,7 +1064,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
                 )
                 self.round_transition_screen.stop_auto_countdown()
                 btn.setEnabled(False)
-                self.status_label.setText("⚠️ Next round blocked: no live buzzers detected.")
+                self.status_label.setText(
+                    "⚠️ Next round blocked: no live buzzers detected."
+                )
                 self.status_label.setStyleSheet(
                     "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
                     "background: rgba(231, 76, 60, 0.2); "
@@ -1055,13 +1101,14 @@ class HostScreen(RemoteKeyHandler, QWidget):
             else:
                 self.btn_unlock.setEnabled(False)
                 self.btn_unlock.setText("⚠️ NO LIVE BUZZERS")
-                self.status_label.setText("⚠️ No live buzzers detected for this question.")
+                self.status_label.setText(
+                    "⚠️ No live buzzers detected for this question."
+                )
                 self.status_label.setStyleSheet(
                     "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
                     "background: rgba(231, 76, 60, 0.2); "
                     "padding: 12px 20px; border: 2px solid #e74c3c; border-radius: 8px;"
                 )
-
 
     def _on_attempt_changed(self, attempt_number: int):
         remaining = self.engine.get_players_remaining()
@@ -1075,8 +1122,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
         )
 
         if attempt_number > 1:
-            self.status_label.setText(f"⚡ Attempt {attempt_number} - Remaining players: {remaining}")
-
+            self.status_label.setText(
+                f"⚡ Attempt {attempt_number} - Remaining players: {remaining}"
+            )
 
     def _unlock_buzzers(self):
         if not self.game_started:
@@ -1167,7 +1215,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         if self.mqtt_backend:
             q = self.engine.current_question()
-            self.mqtt_backend.start_question(question_id=q.id, max_attempts=q.max_attempts)
+            self.mqtt_backend.start_question(
+                question_id=q.id, max_attempts=q.max_attempts
+            )
             self._heartbeat_in_progress = True
             self.mqtt_backend.send_heartbeat_to_all(timeout_seconds=10)
         else:
@@ -1184,7 +1234,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self._render_question()
         self._render_scores()
         self.btn_next.setEnabled(True)
-
 
     # =========================================================================
     # SHARED WRONG-ANSWER UI HELPER
@@ -1238,7 +1287,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.btn_next.setEnabled(True)
             self.btn_next.setText("▶️ NEXT QUESTION")
             self.btn_unlock.setEnabled(False)
-            self.status_label.setText("❌ All attempts exhausted! Click NEXT to continue.")
+            self.status_label.setText(
+                "❌ All attempts exhausted! Click NEXT to continue."
+            )
             self.status_label.setStyleSheet(
                 "font-size: 14px; font-weight: 700; color: rgba(231, 76, 60, 1.0); "
                 "background: rgba(231, 76, 60, 0.2); "
@@ -1250,7 +1301,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
     # =========================================================================
 
     def _auto_judge_answer(self, player_id: int, answer: str):
-        answer_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
+        answer_map = {"A": 0, "B": 1, "C": 2, "D": 3}
         if answer not in answer_map:
             print(f"⚠️ Invalid answer: {answer}")
             return
@@ -1269,10 +1320,12 @@ class HostScreen(RemoteKeyHandler, QWidget):
             return
 
         selected_index = answer_map[answer]
-        is_correct = (selected_index == question.correct_index)
+        is_correct = selected_index == question.correct_index
 
         print(f"   Selected: {selected_index} ({question.options[selected_index]})")
-        print(f"   Correct:  {question.correct_index} ({question.options[question.correct_index]})")
+        print(
+            f"   Correct:  {question.correct_index} ({question.options[question.correct_index]})"
+        )
         print(f"   Result:   {'✅ CORRECT' if is_correct else '❌ WRONG'}")
 
         # Guard flag prevents _on_attempt_failed from running its own UI/MQTT
@@ -1289,7 +1342,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.correct_flash.flash_green("✅ CORRECT!")
             self.options.mark_option_correct(answer)
 
-            self.status_label.setText(f"✅ Player {player_id} CORRECT! Click NEXT to continue.")
+            self.status_label.setText(
+                f"✅ Player {player_id} CORRECT! Click NEXT to continue."
+            )
             self.status_label.setStyleSheet(
                 "font-size: 14px; font-weight: 700; color: rgba(57, 255, 20, 1.0); "
                 "background: rgba(57, 255, 20, 0.2); "
@@ -1352,7 +1407,11 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
     def _continue_to_next_round(self):
         if not self._round_transition_has_live_buzzers:
-            QMessageBox.warning(self, "No Live Buzzers", "Cannot start the next round because no live buzzers were detected.")
+            QMessageBox.warning(
+                self,
+                "No Live Buzzers",
+                "Cannot start the next round because no live buzzers were detected.",
+            )
             return
 
         self.round_transition_screen.btn_continue.setEnabled(False)
@@ -1446,7 +1505,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
         for player_id in range(1, 5):
             color = player_colors[player_id]
             current_score = self.engine.scores.scores.get(player_id, 0)
-            btn = QPushButton(f"Player {player_id} - Current Score: {current_score} pts")
+            btn = QPushButton(
+                f"Player {player_id} - Current Score: {current_score} pts"
+            )
             btn.setMinimumHeight(60)
             btn.setStyleSheet(
                 f"QPushButton {{ "
@@ -1457,7 +1518,9 @@ class HostScreen(RemoteKeyHandler, QWidget):
                 f"QPushButton:hover {{ background: {color}60; }}"
                 f"QPushButton:pressed {{ background: {color}80; }}"
             )
-            btn.clicked.connect(lambda checked, pid=player_id: self._apply_bonus_point(pid, dialog))
+            btn.clicked.connect(
+                lambda checked, pid=player_id: self._apply_bonus_point(pid, dialog)
+            )
             buttons_layout.addWidget(btn)
 
         layout.addLayout(buttons_layout)
@@ -1474,7 +1537,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         dialog.exec()
 
     def _apply_bonus_point(self, player_id: int, dialog: QDialog):
-        if hasattr(self.engine, 'award_bonus'):
+        if hasattr(self.engine, "award_bonus"):
             self.engine.award_bonus(player_id, 1, "Bonus point (admin awarded)")
         else:
             self.engine.scores.add(player_id, 1, "Bonus point (admin awarded)")

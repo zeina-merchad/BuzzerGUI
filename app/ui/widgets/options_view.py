@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QGridLayout, QLabel, QHBoxLayout
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QWidget
 
 
 class OptionsView(QWidget):
@@ -20,8 +20,8 @@ class OptionsView(QWidget):
 
         for i, (row, col) in enumerate(positions):
             container = QWidget()
-            container.setMinimumHeight(130)
-            container.setMaximumHeight(200)
+            container.setMinimumHeight(80)
+            container.setMaximumHeight(130)
 
             container.setStyleSheet(
                 f"QWidget {{ "
@@ -35,22 +35,22 @@ class OptionsView(QWidget):
             )
 
             layout = QHBoxLayout(container)
-            layout.setContentsMargins(24, 18, 24, 18)
-            layout.setSpacing(18)
+            layout.setContentsMargins(14, 10, 14, 10)
+            layout.setSpacing(10)
 
             letter_label = QLabel(f"{letters[i]}:")
             letter_label.setStyleSheet(
-                "font-size: 32px; font-weight: 900; color: white; "
+                "font-size: 22px; font-weight: 900; color: white; "
                 "background: transparent; border: none;"
             )
             letter_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            letter_label.setFixedWidth(52)
+            letter_label.setFixedWidth(36)
 
             text_label = QLabel("")
             text_label.setWordWrap(True)
             text_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             text_label.setStyleSheet(
-                "font-size: 36px; font-weight: 700; color: white; "
+                "font-size: 24px; font-weight: 700; color: white; "
                 "background: transparent; border: none;"
             )
 
@@ -74,7 +74,7 @@ class OptionsView(QWidget):
 
     def mark_option_eliminated(self, answer: str):
         """Strike through a wrong answer in red."""
-        answer_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
+        answer_map = {"A": 0, "B": 1, "C": 2, "D": 3}
         if answer not in answer_map:
             return
 
@@ -92,13 +92,13 @@ class OptionsView(QWidget):
             "}"
         )
         self._letter_labels[index].setStyleSheet(
-            "font-size: 32px; font-weight: 900; "
+            "font-size: 22px; font-weight: 900; "
             "color: rgba(231, 76, 60, 0.7); "
             "background: transparent; border: none; "
             "text-decoration: line-through;"
         )
         self._labels[index].setStyleSheet(
-            "font-size: 36px; font-weight: 700; "
+            "font-size: 24px; font-weight: 700; "
             "color: rgba(231, 76, 60, 0.7); "
             "background: transparent; border: none; "
             "text-decoration: line-through;"
@@ -113,7 +113,7 @@ class OptionsView(QWidget):
         which was right.  If you want to clear wrong answers before revealing
         correct, call reset_eliminated() then mark_option_correct().
         """
-        answer_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
+        answer_map = {"A": 0, "B": 1, "C": 2, "D": 3}
         if answer not in answer_map:
             return
 
@@ -130,12 +130,12 @@ class OptionsView(QWidget):
             "}"
         )
         self._letter_labels[index].setStyleSheet(
-            "font-size: 32px; font-weight: 900; "
+            "font-size: 22px; font-weight: 900; "
             "color: #39FF14; "
             "background: transparent; border: none;"
         )
         self._labels[index].setStyleSheet(
-            "font-size: 36px; font-weight: 900; "
+            "font-size: 24px; font-weight: 900; "
             "color: #39FF14; "
             "background: transparent; border: none;"
         )
@@ -156,11 +156,11 @@ class OptionsView(QWidget):
                 f"}}"
             )
             self._letter_labels[i].setStyleSheet(
-                "font-size: 32px; font-weight: 900; color: white; "
+                "font-size: 22px; font-weight: 900; color: white; "
                 "background: transparent; border: none;"
             )
             self._labels[i].setStyleSheet(
-                "font-size: 36px; font-weight: 700; color: white; "
+                "font-size: 24px; font-weight: 700; color: white; "
                 "background: transparent; border: none;"
             )
 
