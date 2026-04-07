@@ -166,21 +166,23 @@ class CornerPlayerCard(QFrame):
         }
         self.color = self.team_colors.get(player_id, "#888888")
 
-        self.setMinimumSize(160, 220)
-        self.setMaximumWidth(220)
+        from app.ui.display_config import SCALE as _S
+
+        self.setMinimumSize(_S.card_min_w, _S.card_min_h)
+        self.setMaximumWidth(_S.card_max_w)
         self.setStyleSheet("QFrame { background: transparent; border: none; }")
 
         self.icon = QLabel()
         self.icon.setAlignment(Qt.AlignCenter)
-        self.icon.setFixedSize(140, 140)
+        self.icon.setFixedSize(_S.circle_size, _S.circle_size)
         self._set_disconnected_icon()
 
         self.label = QLabel(f"P{player_id}: WAITING")
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setStyleSheet(
-            "font-size: 15px; font-weight: 900; color: white; "
-            "background: rgba(100, 100, 100, 0.7); "
-            "padding: 6px 10px; border-radius: 8px;"
+            f"font-size: {_S.card_label_font}px; font-weight: 900; color: white; "
+            f"background: rgba(100, 100, 100, 0.7); "
+            f"padding: {_S.card_label_padding}; border-radius: 8px;"
         )
 
         lay = QVBoxLayout(self)
@@ -190,11 +192,13 @@ class CornerPlayerCard(QFrame):
         lay.addWidget(self.label, alignment=Qt.AlignHCenter)
 
     def _icon_style(self, bg: str, border: str, color: str, font: int) -> str:
+        from app.ui.display_config import SCALE as _S
+
         return (
             f"QLabel {{ "
             f"background: {bg}; "
             f"border: {border}; "
-            f"border-radius: 70px; "
+            f"border-radius: {_S.circle_radius}px; "
             f"color: {color}; "
             f"font-size: {font}px; "
             f"font-weight: 900; "
@@ -202,52 +206,59 @@ class CornerPlayerCard(QFrame):
         )
 
     def _label_style(self, bg: str) -> str:
+        from app.ui.display_config import SCALE as _S
+
         return (
-            f"font-size: 15px; font-weight: 900; color: white; "
+            f"font-size: {_S.card_label_font}px; font-weight: 900; color: white; "
             f"background: {bg}; "
-            f"padding: 6px 10px; border-radius: 8px;"
+            f"padding: {_S.card_label_padding}; border-radius: 8px;"
         )
 
     def _set_disconnected_icon(self):
+        from app.ui.display_config import SCALE as _S
+
         self.icon.setStyleSheet(
             self._icon_style(
-                bg="rgba(85, 85, 85, 0.6)",
+                bg="rgba(85,85,85,0.6)",
                 border="none",
                 color="#cccccc",
-                font=48,
+                font=_S.circle_font,
             )
         )
         self.icon.setText(str(self._score))
 
     def _set_connected_icon(self):
+        from app.ui.display_config import SCALE as _S
+
         self.icon.setStyleSheet(
             self._icon_style(
-                bg="rgba(85, 85, 85, 0.6)",
+                bg="rgba(85,85,85,0.6)",
                 border="none",
                 color="#cccccc",
-                font=48,
+                font=_S.circle_font,
             )
         )
         self.icon.setText(str(self._score))
 
     def _set_buzzed_icon(self):
+        from app.ui.display_config import SCALE as _S
+
         self.icon.setStyleSheet(
             self._icon_style(
-                bg=self.color,
-                border="none",
-                color="white",
-                font=48,
+                bg=self.color, border="none", color="white", font=_S.circle_font
             )
         )
         self.icon.setText(str(self._score))
 
     def _set_eliminated_icon(self):
+        from app.ui.display_config import SCALE as _S
+
         self.icon.setStyleSheet(
             self._icon_style(
-                bg="rgba(231, 76, 60, 0.4)",
+                bg="rgba(231,76,60,0.4)",
                 border="none",
                 color="#e74c3c",
-                font=48,
+                font=_S.circle_font,
             )
         )
         self.icon.setText(str(self._score))
@@ -346,8 +357,15 @@ class HostScreen(RemoteKeyHandler, QWidget):
     # =========================================================================
 
     def _build_ui(self):
+        from app.ui.display_config import SCALE
+
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(
+            SCALE.root_margins,
+            SCALE.root_margins,
+            SCALE.root_margins,
+            SCALE.root_margins,
+        )
         root.setSpacing(0)
 
         self.player_cards = {}
@@ -357,7 +375,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         center_widget = self._build_center_area()
 
         main_row = QHBoxLayout()
-        main_row.setSpacing(8)
+        main_row.setSpacing(SCALE.main_row_spacing)
         main_row.setContentsMargins(0, 0, 0, 0)
         main_row.addWidget(left_column, stretch=1)
         main_row.addWidget(center_widget, stretch=3)
@@ -375,14 +393,19 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.correct_flash.hide()
 
     def _create_logo_label(self):
+        from app.ui.display_config import SCALE
+
         self.logo_label = QLabel()
         self.logo_label.setPixmap(
             QPixmap(self.resource_path("app/ui/screens/logo_full.png")).scaled(
-                260, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                SCALE.logo_size,
+                SCALE.logo_size,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
             )
         )
         self.logo_label.setAlignment(Qt.AlignCenter)
-        self.logo_label.setFixedSize(260, 260)
+        self.logo_label.setFixedSize(SCALE.logo_size, SCALE.logo_size)
         self.logo_label.setStyleSheet(
             "QLabel { background: transparent; border: none; }"
         )
@@ -432,12 +455,16 @@ class HostScreen(RemoteKeyHandler, QWidget):
         return left_column, right_column
 
     def _build_center_area(self):
+        from app.ui.display_config import SCALE
+
         center_widget = QWidget()
         center_widget.setStyleSheet("QWidget { background: transparent; }")
-        center_widget.setMaximumWidth(1000)
+        center_widget.setMaximumWidth(1200)
         center_layout = QVBoxLayout(center_widget)
-        center_layout.setSpacing(8)
-        center_layout.setContentsMargins(20, 0, 20, 0)
+        center_layout.setSpacing(SCALE.center_spacing)
+        center_layout.setContentsMargins(
+            SCALE.center_h_margins, 0, SCALE.center_h_margins, 0
+        )
 
         timer_row = QWidget()
         timer_row.setStyleSheet("QWidget { background: transparent; }")
@@ -469,10 +496,10 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self.question.setWordWrap(True)
         self.question.setAlignment(Qt.AlignCenter)
         self.question.setStyleSheet(
-            "font-size: 32px; font-weight: 900; color: white; "
-            "padding: 12px; background: rgba(20, 30, 45, 0.8); "
-            "border: 3px solid #39FF14; border-radius: 16px; "
-            "min-height: 120px;"
+            f"font-size: {SCALE.question_font}px; font-weight: 900; color: white; "
+            f"padding: {SCALE.question_padding}; background: rgba(20, 30, 45, 0.8); "
+            f"border: 3px solid #39FF14; border-radius: 16px; "
+            f"min-height: {SCALE.question_min_h}px;"
         )
         center_layout.addWidget(self.question)
 
@@ -483,142 +510,103 @@ class HostScreen(RemoteKeyHandler, QWidget):
         return center_widget
 
     def _build_control_panel(self):
+        from app.ui.display_config import SCALE
+
         control_panel = QFrame()
         control_panel.setStyleSheet(
-            "QFrame { "
+            f"QFrame {{ "
             "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
             "stop:0 rgba(20, 30, 45, 0.95), stop:1 rgba(15, 25, 40, 0.95)); "
             "border: 2px solid rgba(57, 255, 20, 0.3); "
-            "border-radius: 12px; "
-            "padding: 15px; "
+            f"border-radius: {SCALE.btn_radius + 4}px; "
             "}"
         )
 
         control_layout = QHBoxLayout(control_panel)
         control_layout.setSpacing(10)
-        control_layout.setContentsMargins(20, 10, 20, 10)
+        control_layout.setContentsMargins(20, 8, 20, 8)
+
+        S = SCALE
+        btn_base = (
+            f"border-radius: {S.btn_radius}px; "
+            f"padding: {S.btn_padding}; "
+            f"font-size: {S.btn_font}px; font-weight: 900; "
+            f"min-width: {S.btn_min_w}px; min-height: {S.btn_min_h}px; "
+        )
+        btn_disabled = "QPushButton:disabled { background: rgba(100,100,100,0.2); border-color: #666; color: #666; }"
 
         button_style = (
-            "QPushButton { "
-            "background: rgba(57, 255, 20, 0.15); "
-            "border: 2px solid #39FF14; "
-            "border-radius: 8px; "
-            "padding: 8px 18px; "
-            "font-size: 14px; "
-            "font-weight: 900; "
-            "color: white; "
-            "min-width: 110px; "
-            "min-height: 38px; "
-            "}"
-            "QPushButton:hover { background: rgba(57, 255, 20, 0.3); }"
-            "QPushButton:pressed { background: rgba(57, 255, 20, 0.5); }"
-            "QPushButton:disabled { "
-            "background: rgba(100, 100, 100, 0.2); "
-            "border-color: #666; "
-            "color: #666; "
-            "}"
+            f"QPushButton {{ background: rgba(57,255,20,0.15); border: 2px solid #39FF14; "
+            f"color: white; {btn_base}}}"
+            "QPushButton:hover { background: rgba(57,255,20,0.3); }"
+            "QPushButton:pressed { background: rgba(57,255,20,0.5); }" + btn_disabled
         )
 
         self.phase_label = QLabel("PHASE: IDLE")
         self.phase_label.setStyleSheet(
-            "font-size: 12px; font-weight: 900; color: white; "
-            "background: rgba(57, 255, 20, 0.2); "
-            "padding: 8px 14px; border: 2px solid #39FF14; border-radius: 8px;"
+            f"font-size: {S.phase_font}px; font-weight: 900; color: white; "
+            "background: rgba(57,255,20,0.2); "
+            f"padding: {S.btn_padding}; border: 2px solid #39FF14; "
+            f"border-radius: {S.btn_radius}px;"
         )
 
-        self.btn_start_game = QPushButton("🎮 START GAME")
+        self.btn_start_game = QPushButton("\U0001f3ae START GAME")
         self.btn_start_game.setStyleSheet(
-            "QPushButton { "
-            "background: rgba(57, 255, 20, 0.3); "
-            "border: 2px solid #39FF14; "
-            "border-radius: 8px; "
-            "padding: 8px 20px; "
-            "font-size: 14px; "
-            "font-weight: 900; "
-            "color: white; "
-            "min-width: 130px; "
-            "min-height: 38px; "
-            "}"
-            "QPushButton:hover { background: rgba(57, 255, 20, 0.5); }"
-            "QPushButton:pressed { background: rgba(57, 255, 20, 0.7); }"
-            "QPushButton:disabled { background: rgba(100,100,100,0.2); border-color: #666; color: #666; }"
+            f"QPushButton {{ background: rgba(57,255,20,0.3); border: 2px solid #39FF14; "
+            f"color: white; {btn_base} min-width: {S.btn_min_w + 20}px; }}"
+            "QPushButton:hover { background: rgba(57,255,20,0.5); }"
+            "QPushButton:pressed { background: rgba(57,255,20,0.7); }" + btn_disabled
         )
         self.btn_start_game.clicked.connect(self._start_game)
 
-        self.btn_unlock = QPushButton("🔓 UNLOCK BUZZERS")
+        self.btn_unlock = QPushButton("\U0001f513 UNLOCK BUZZERS")
         self.btn_unlock.setStyleSheet(
-            "QPushButton { "
-            "background: rgba(255, 193, 7, 0.2); "
-            "border: 2px solid #ffc107; "
-            "border-radius: 8px; "
-            "padding: 8px 18px; "
-            "font-size: 14px; "
-            "font-weight: 900; "
-            "color: white; "
-            "min-width: 130px; "
-            "min-height: 38px; "
-            "}"
-            "QPushButton:hover { background: rgba(255, 193, 7, 0.4); }"
-            "QPushButton:pressed { background: rgba(255, 193, 7, 0.6); }"
-            "QPushButton:disabled { background: rgba(100,100,100,0.2); border-color: #666; color: #666; }"
+            f"QPushButton {{ background: rgba(255,193,7,0.2); border: 2px solid #ffc107; "
+            f"color: white; {btn_base} min-width: {S.btn_min_w + 20}px; }}"
+            "QPushButton:hover { background: rgba(255,193,7,0.4); }"
+            "QPushButton:pressed { background: rgba(255,193,7,0.6); }" + btn_disabled
         )
         self.btn_unlock.clicked.connect(self._unlock_buzzers)
         self.btn_unlock.setEnabled(False)
         self.btn_unlock.hide()
 
-        self.btn_next = QPushButton("▶️ NEXT QUESTION")
+        self.btn_next = QPushButton("\u25b6\ufe0f NEXT QUESTION")
         self.btn_next.setStyleSheet(button_style)
         self.btn_next.clicked.connect(self._load_next_question)
         self.btn_next.setEnabled(False)
         self.btn_next.hide()
 
-        self.btn_bonus = QPushButton("⭐ BONUS POINT")
+        self.btn_bonus = QPushButton("\u2b50 BONUS POINT")
         self.btn_bonus.setStyleSheet(
-            "QPushButton { "
-            "background: rgba(255, 215, 0, 0.2); "
-            "border: 2px solid #ffd700; "
-            "border-radius: 8px; "
-            "padding: 8px 18px; "
-            "font-size: 14px; "
-            "font-weight: 900; "
-            "color: #ffd700; "
-            "min-width: 120px; "
-            "min-height: 38px; "
-            "}"
-            "QPushButton:hover { background: rgba(255, 215, 0, 0.4); }"
-            "QPushButton:pressed { background: rgba(255, 215, 0, 0.6); }"
-            "QPushButton:disabled { background: rgba(100,100,100,0.2); border-color: #666; color: #666; }"
+            f"QPushButton {{ background: rgba(255,215,0,0.2); border: 2px solid #ffd700; "
+            f"color: #ffd700; {btn_base}}}"
+            "QPushButton:hover { background: rgba(255,215,0,0.4); }"
+            "QPushButton:pressed { background: rgba(255,215,0,0.6); }" + btn_disabled
         )
         self.btn_bonus.clicked.connect(self._award_bonus_point)
 
-        self.btn_reset = QPushButton("🔄 RESET GAME")
+        self.btn_reset = QPushButton("\U0001f504 RESET GAME")
         self.btn_reset.setStyleSheet(button_style)
         self.btn_reset.clicked.connect(self._reset_game)
 
-        self.help_btn = QPushButton("ℹ️")
-        self.help_btn.setFixedSize(38, 38)
+        self.help_btn = QPushButton("\u2139\ufe0f")
+        self.help_btn.setFixedSize(S.help_btn_size, S.help_btn_size)
         self.help_btn.setStyleSheet(
-            "QPushButton { "
-            "background: rgba(52, 152, 219, 0.3); "
-            "border: 2px solid #3498db; "
-            "border-radius: 19px; "
-            "font-size: 16px; "
-            "color: white; "
-            "}"
-            "QPushButton:hover { background: rgba(52, 152, 219, 0.5); }"
+            f"QPushButton {{ background: rgba(52,152,219,0.3); border: 2px solid #3498db; "
+            f"border-radius: {S.help_btn_radius}px; font-size: {S.help_btn_font}px; color: white; }}"
+            "QPushButton:hover { background: rgba(52,152,219,0.5); }"
         )
         self.help_btn.clicked.connect(self._show_help)
 
         self.status_label = QLabel("Waiting for players...")
         self.status_label.setStyleSheet(
-            "font-size: 13px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
-            "background: rgba(57, 255, 20, 0.15); "
-            "padding: 8px 14px; border: 2px solid rgba(57, 255, 20, 0.3); "
-            "border-radius: 8px;"
+            f"font-size: {S.status_font}px; font-weight: 700; color: rgba(255,255,255,0.7); "
+            "background: rgba(57,255,20,0.15); "
+            f"padding: {S.btn_padding}; border: 2px solid rgba(57,255,20,0.3); "
+            f"border-radius: {S.btn_radius}px;"
         )
         self.status_label.hide()
 
-        # ── phase label left | stretch | buttons | stretch ───────────────────
         control_layout.addWidget(self.phase_label)
         control_layout.addWidget(self.status_label)
         control_layout.addStretch(1)

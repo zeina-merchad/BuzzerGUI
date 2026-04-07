@@ -5,6 +5,8 @@ from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QWidget
 class OptionsView(QWidget):
     def __init__(self):
         super().__init__()
+        from app.ui.display_config import SCALE as _S
+
         self._labels = []
         self._letter_labels = []
         self._containers = []
@@ -20,8 +22,8 @@ class OptionsView(QWidget):
 
         for i, (row, col) in enumerate(positions):
             container = QWidget()
-            container.setMinimumHeight(80)
-            container.setMaximumHeight(130)
+            container.setMinimumHeight(_S.option_min_h)
+            container.setMaximumHeight(_S.option_max_h)
 
             container.setStyleSheet(
                 f"QWidget {{ "
@@ -40,17 +42,17 @@ class OptionsView(QWidget):
 
             letter_label = QLabel(f"{letters[i]}:")
             letter_label.setStyleSheet(
-                "font-size: 22px; font-weight: 900; color: white; "
+                f"font-size: {_S.option_letter_font}px; font-weight: 900; color: white; "
                 "background: transparent; border: none;"
             )
             letter_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            letter_label.setFixedWidth(36)
+            letter_label.setFixedWidth(_S.option_letter_w)
 
             text_label = QLabel("")
             text_label.setWordWrap(True)
             text_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             text_label.setStyleSheet(
-                "font-size: 24px; font-weight: 700; color: white; "
+                f"font-size: {_S.option_text_font}px; font-weight: 700; color: white; "
                 "background: transparent; border: none;"
             )
 
@@ -73,6 +75,8 @@ class OptionsView(QWidget):
             lab.setText(opts[i] if opts[i] else "")
 
     def mark_option_eliminated(self, answer: str):
+        from app.ui.display_config import SCALE as _S
+
         """Strike through a wrong answer in red."""
         answer_map = {"A": 0, "B": 1, "C": 2, "D": 3}
         if answer not in answer_map:
@@ -92,19 +96,21 @@ class OptionsView(QWidget):
             "}"
         )
         self._letter_labels[index].setStyleSheet(
-            "font-size: 22px; font-weight: 900; "
+            f"font-size: {_S.option_letter_font}px; font-weight: 900; "
             "color: rgba(231, 76, 60, 0.7); "
             "background: transparent; border: none; "
             "text-decoration: line-through;"
         )
         self._labels[index].setStyleSheet(
-            "font-size: 24px; font-weight: 700; "
+            f"font-size: {_S.option_text_font}px; font-weight: 700; "
             "color: rgba(231, 76, 60, 0.7); "
             "background: transparent; border: none; "
             "text-decoration: line-through;"
         )
 
     def mark_option_correct(self, answer: str):
+        from app.ui.display_config import SCALE as _S
+
         """Highlight the correct answer in green.
 
         Deliberately does NOT call reset_eliminated() first — this preserves
@@ -130,17 +136,19 @@ class OptionsView(QWidget):
             "}"
         )
         self._letter_labels[index].setStyleSheet(
-            "font-size: 22px; font-weight: 900; "
+            f"font-size: {_S.option_letter_font}px; font-weight: 900; "
             "color: #39FF14; "
             "background: transparent; border: none;"
         )
         self._labels[index].setStyleSheet(
-            "font-size: 24px; font-weight: 900; "
+            f"font-size: {_S.option_text_font}px; font-weight: 900; "
             "color: #39FF14; "
             "background: transparent; border: none;"
         )
 
     def reset_eliminated(self):
+        from app.ui.display_config import SCALE as _S
+
         self._eliminated.clear()
 
         border_colors = ["#39FF14", "#39FF14", "#39FF14", "#39FF14"]
@@ -160,7 +168,7 @@ class OptionsView(QWidget):
                 "background: transparent; border: none;"
             )
             self._labels[i].setStyleSheet(
-                "font-size: 24px; font-weight: 700; color: white; "
+                f"font-size: {_S.option_text_font}px; font-weight: 700; color: white; "
                 "background: transparent; border: none;"
             )
 

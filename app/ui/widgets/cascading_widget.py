@@ -11,6 +11,8 @@ class CascadingAttemptsWidget(QWidget):
         super().__init__()
         self.setStyleSheet("QWidget { background: transparent; }")
 
+        from app.ui.display_config import SCALE as _S
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -26,14 +28,19 @@ class CascadingAttemptsWidget(QWidget):
         )
 
         layout = QVBoxLayout(container)
-        layout.setSpacing(6)
-        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(_S.cascade_spacing)
+        layout.setContentsMargins(
+            _S.cascade_margin_h,
+            _S.cascade_margin_v,
+            _S.cascade_margin_h,
+            _S.cascade_margin_v,
+        )
 
         title = QLabel("ATTEMPT\nSTATUS")
         title.setAlignment(Qt.AlignCenter)
         title.setWordWrap(True)
         title.setStyleSheet(
-            "font-size: 16px; font-weight: 900; color: #39FF14; "
+            f"font-size: {_S.cascade_title_font}px; font-weight: 900; color: #39FF14; "
             "letter-spacing: 1px; background: transparent; border: none;"
         )
         layout.addWidget(title)
@@ -42,7 +49,7 @@ class CascadingAttemptsWidget(QWidget):
         self.attempt_label.setAlignment(Qt.AlignCenter)
         self.attempt_label.setWordWrap(True)
         self.attempt_label.setStyleSheet(
-            "font-size: 34px; font-weight: 900; color: white; "
+            f"font-size: {_S.cascade_attempt_font}px; font-weight: 900; color: white; "
             "background: transparent; border: none; padding: 2px;"
         )
         layout.addWidget(self.attempt_label)
@@ -51,7 +58,7 @@ class CascadingAttemptsWidget(QWidget):
         self.points_label.setAlignment(Qt.AlignCenter)
         self.points_label.setWordWrap(True)
         self.points_label.setStyleSheet(
-            "font-size: 18px; font-weight: 700; color: #ffd700; "
+            f"font-size: {_S.cascade_points_font}px; font-weight: 700; color: #ffd700; "
             "background: transparent; border: none;"
         )
         layout.addWidget(self.points_label)
@@ -60,7 +67,7 @@ class CascadingAttemptsWidget(QWidget):
         self.players_label.setAlignment(Qt.AlignCenter)
         self.players_label.setWordWrap(True)
         self.players_label.setStyleSheet(
-            "font-size: 14px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
+            f"font-size: {_S.cascade_players_font}px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
             "background: transparent; border: none; padding-top: 2px;"
         )
         layout.addWidget(self.players_label)
@@ -70,14 +77,14 @@ class CascadingAttemptsWidget(QWidget):
         indicators_widget.setStyleSheet("QWidget { background: transparent; }")
         ind_layout = QHBoxLayout(indicators_widget)
         ind_layout.setContentsMargins(0, 6, 0, 0)
-        ind_layout.setSpacing(8)
+        ind_layout.setSpacing(max(4, _S.cascade_indicator_size // 10))
         ind_layout.setAlignment(Qt.AlignCenter)
 
         self.player_indicators = {}
         for i in range(1, 5):
             ind = QLabel(f"P{i}")
             ind.setAlignment(Qt.AlignCenter)
-            ind.setFixedSize(44, 44)
+            ind.setFixedSize(_S.cascade_indicator_size, _S.cascade_indicator_size)
             ind.setStyleSheet(self._idle_indicator_style())
             self.player_indicators[i] = ind
             ind_layout.addWidget(ind)
@@ -92,41 +99,49 @@ class CascadingAttemptsWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _idle_indicator_style(self):
+        from app.ui.display_config import SCALE as _S
+
         return (
             "QLabel { "
             "background: rgba(255, 255, 255, 0.1); "
             "border: 2px solid rgba(255, 255, 255, 0.3); "
-            "border-radius: 22px; "
+            f"border-radius: {_S.cascade_indicator_radius}px; "
             "color: rgba(255, 255, 255, 0.5); "
-            "font-size: 14px; font-weight: 900; "
+            f"font-size: {_S.cascade_indicator_font}px; font-weight: 900; "
             "}"
         )
 
     def _failed_indicator_style(self):
+        from app.ui.display_config import SCALE as _S
+
         return (
             "QLabel { "
             "background: rgba(231, 76, 60, 0.3); "
             "border: 2px solid #e74c3c; "
-            "border-radius: 22px; "
+            f"border-radius: {_S.cascade_indicator_radius}px; "
             "color: #e74c3c; "
-            "font-size: 14px; font-weight: 900; "
+            f"font-size: {_S.cascade_indicator_font}px; font-weight: 900; "
             "}"
         )
 
     def _available_indicator_style(self):
+        from app.ui.display_config import SCALE as _S
+
         return (
             "QLabel { "
             "background: rgba(57, 255, 20, 0.2); "
             "border: 2px solid #39FF14; "
-            "border-radius: 22px; "
+            f"border-radius: {_S.cascade_indicator_radius}px; "
             "color: #39FF14; "
-            "font-size: 14px; font-weight: 900; "
+            f"font-size: {_S.cascade_indicator_font}px; font-weight: 900; "
             "}"
         )
 
     def _attempt_label_style(self, color: str):
+        from app.ui.display_config import SCALE as _S
+
         return (
-            f"font-size: 34px; font-weight: 900; color: {color}; "
+            f"font-size: {_S.cascade_attempt_font}px; font-weight: 900; color: {color}; "
             f"background: transparent; border: none; padding: 2px;"
         )
 
