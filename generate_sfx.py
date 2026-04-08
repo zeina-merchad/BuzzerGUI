@@ -281,7 +281,7 @@ def sfx_crowd_clap(n_clappers=60, duration=2.5, seed=1337) -> list:
 
     # Normalize before reverb
     peak = max(1e-9, max(abs(x) for x in out))
-    out = [x / peak * 0.95 for x in out]
+    out = [x / peak * 0.80 for x in out]
 
     # Add room reverb for arena/hall feel
     print("  applying reverb...")
@@ -289,7 +289,7 @@ def sfx_crowd_clap(n_clappers=60, duration=2.5, seed=1337) -> list:
 
     # Final normalize
     peak = max(1e-9, max(abs(x) for x in out))
-    out = [x / peak * 0.98 for x in out]
+    out = [x / peak * 0.88 for x in out]
     return out
 
 
@@ -322,7 +322,7 @@ def sfx_buzz():
     return gen_tone(dur, f)
 
 
-def sfx_correct():
+def sfx_correct(sounds_dir: Path = None):
     notes = [523.25, 659.25, 783.99]
     dur_each = 0.12
     arpeggio = []
@@ -341,11 +341,47 @@ def sfx_correct():
 
         arpeggio += make()
         arpeggio += silence(0.02)
-    print("  generating crowd clap...")
-    claps = sfx_crowd_clap(n_clappers=60, duration=2.5, seed=4242)
-    if len(arpeggio) < len(claps):
-        arpeggio += silence((len(claps) - len(arpeggio)) / SR)
-    return mix(arpeggio, claps)
+
+    # Look for applause.wav in the sounds directory
+    search_paths = []
+    if sounds_dir:
+        search_paths.append(Path(sounds_dir) / "applause.wav")
+    search_paths += [
+        Path("app") / "core" / "sounds" / "applause.wav",
+        Path(__file__).parent / "sounds" / "applause.wav",
+        Path(__file__).parent / "applause.wav",
+    ]
+
+    applause_path = None
+    for p in search_paths:
+        if p.exists():
+            applause_path = p
+            break
+
+    if applause_path:
+        print(f"  loading applause from {applause_path}")
+        with wave.open(str(applause_path), "rb") as wf:
+            n = wf.getnframes()
+            raw = wf.readframes(n)
+            ch = wf.getnchannels()
+            sw = wf.getsampwidth()
+            claps = []
+            for i in range(n):
+                v = int.from_bytes(
+                    raw[i * ch * sw : i * ch * sw + sw], "little", signed=True
+                )
+                claps.append(v / 32768.0)
+        # Arpeggio first, then applause
+        return arpeggio + claps
+    else:
+        print(
+            f"  WARNING: applause.wav not found in any of: {[str(p) for p in search_paths]}"
+        )
+        print("  generating crowd clap fallback...")
+        claps = sfx_crowd_clap(n_clappers=60, duration=2.5, seed=4242)
+        if len(arpeggio) < len(claps):
+            arpeggio += silence((len(claps) - len(arpeggio)) / SR)
+        return mix(arpeggio, claps)
 
 
 def sfx_wrong():
@@ -466,7 +502,7 @@ def main():
     sounds_dir = Path("app") / "core" / "sounds"
     sounds = {
         "buzz.wav": sfx_buzz(),
-        "correct.wav": sfx_correct(),
+        "correct.wav": sfx_correct(sounds_dir),
         "wrong.wav": sfx_wrong(),
         "timer_warning.wav": sfx_timer_warning(),
         "timer_critical.wav": sfx_timer_critical(),

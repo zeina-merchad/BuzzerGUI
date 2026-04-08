@@ -1,8 +1,15 @@
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QSizePolicy
 from PySide6.QtGui import QPixmap
-from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class MediaView(QWidget):
@@ -12,7 +19,7 @@ class MediaView(QWidget):
         super().__init__()
 
         self.current_media_type = None
-        self._video_mode = "fill"   # "fit" | "fill"
+        self._video_mode = "fill"  # "fit" | "fill"
         self._current_pixmap = None
         self._current_image_path = None
 
@@ -26,9 +33,9 @@ class MediaView(QWidget):
         self.image_box.setScaledContents(False)
         self.image_box.setStyleSheet(
             "border: 4px solid #39FF14; border-radius: 16px; padding: 8px; "
-            "min-height: 250px; background: rgba(15, 25, 40, 0.6);"
+            "background: rgba(15, 25, 40, 0.6);"
         )
-        self.image_box.setMinimumHeight(250)
+        self.image_box.setMinimumHeight(0)
         self.image_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         main_layout.addWidget(self.image_box)
 
@@ -164,7 +171,7 @@ class MediaView(QWidget):
 
         pixmap = QPixmap(image_path)
         if not pixmap.isNull():
-            self.image_box.setMinimumHeight(250)
+            self.image_box.setMinimumHeight(0)
             self.image_box.setMaximumHeight(16777215)
             self._current_pixmap = pixmap
             self._current_image_path = image_path
@@ -187,8 +194,8 @@ class MediaView(QWidget):
             return
 
         box_size = self.image_box.size()
-        w = max(box_size.width() - 30, 200)
-        h = max(box_size.height() - 30, 150)
+        w = max(box_size.width() - 8, 400)
+        h = max(box_size.height() - 8, 300)
         scaled = self._current_pixmap.scaled(
             w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation
         )
@@ -223,6 +230,7 @@ class MediaView(QWidget):
 
         try:
             from pathlib import Path
+
             path = Path(video_path)
 
             if not path.exists():
@@ -249,6 +257,7 @@ class MediaView(QWidget):
         self.btn_fitfill.hide()
 
         from pathlib import Path
+
         path = Path(audio_path)
 
         self.image_box.setMinimumHeight(200)
