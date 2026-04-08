@@ -281,7 +281,7 @@ def sfx_crowd_clap(n_clappers=60, duration=2.5, seed=1337) -> list:
 
     # Normalize before reverb
     peak = max(1e-9, max(abs(x) for x in out))
-    out = [x / peak * 0.80 for x in out]
+    out = [x / peak * 0.95 for x in out]
 
     # Add room reverb for arena/hall feel
     print("  applying reverb...")
@@ -289,7 +289,7 @@ def sfx_crowd_clap(n_clappers=60, duration=2.5, seed=1337) -> list:
 
     # Final normalize
     peak = max(1e-9, max(abs(x) for x in out))
-    out = [x / peak * 0.88 for x in out]
+    out = [x / peak * 0.98 for x in out]
     return out
 
 

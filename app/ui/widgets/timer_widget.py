@@ -1,14 +1,14 @@
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 # Sizes tuned for 4K 55" display
-_SIZE       = 280   # widget fixed size
-_LABEL_SIZE = 220   # label min/max width+height
-_RADIUS     = 110   # border-radius (half of _LABEL_SIZE)
-_FONT       = 80    # font-size px
-_BORDER     = 10    # normal border width
-_BORDER_HI  = 16    # pulse border width (thicker state)
-_BORDER_LO  = 9     # pulse border width (thinner state)
+_LABEL_SIZE = 130
+_RADIUS = 65
+_SIZE = 160  # label + border*2 + margin — enough to never clip
+_FONT = 42
+_BORDER = 6
+_BORDER_HI = 10
+_BORDER_LO = 5
 
 
 class TimerWidget(QWidget):
@@ -21,7 +21,7 @@ class TimerWidget(QWidget):
         self._apply_style_normal()
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(30, 30, 30, 30)
+        lay.setContentsMargins(15, 15, 15, 15)
         lay.addWidget(self.label, alignment=Qt.AlignCenter)
 
         self._pulse_timer = QTimer()
@@ -47,7 +47,9 @@ class TimerWidget(QWidget):
         self.label.setStyleSheet(self._css(_FONT, "transparent", "#39FF14", _BORDER))
 
     def _apply_style_warning(self):
-        self.label.setStyleSheet(self._css(_FONT, "rgba(243, 156, 18, 0.3)", "#ffa500", _BORDER))
+        self.label.setStyleSheet(
+            self._css(_FONT, "rgba(243, 156, 18, 0.3)", "#ffa500", _BORDER)
+        )
 
     def _apply_style_idle(self):
         self.label.setStyleSheet(
