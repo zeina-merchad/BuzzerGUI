@@ -43,16 +43,10 @@ class CascadingAttemptsWidget(QWidget):
             f"font-size: {_S.cascade_title_font}px; font-weight: 900; color: #39FF14; "
             "letter-spacing: 1px; background: transparent; border: none;"
         )
-        layout.addWidget(title)
+        title.hide()
 
         self.attempt_label = QLabel("1ST\nATTEMPT")
-        self.attempt_label.setAlignment(Qt.AlignCenter)
-        self.attempt_label.setWordWrap(True)
-        self.attempt_label.setStyleSheet(
-            f"font-size: {_S.cascade_attempt_font}px; font-weight: 900; color: white; "
-            "background: transparent; border: none; padding: 2px;"
-        )
-        layout.addWidget(self.attempt_label)
+        self.attempt_label.hide()
 
         self.points_label = QLabel("3 POINTS\nAVAILABLE")
         self.points_label.setAlignment(Qt.AlignCenter)
@@ -62,15 +56,6 @@ class CascadingAttemptsWidget(QWidget):
             "background: transparent; border: none;"
         )
         layout.addWidget(self.points_label)
-
-        self.players_label = QLabel("4 PLAYERS\nCAN ATTEMPT")
-        self.players_label.setAlignment(Qt.AlignCenter)
-        self.players_label.setWordWrap(True)
-        self.players_label.setStyleSheet(
-            f"font-size: {_S.cascade_players_font}px; font-weight: 700; color: rgba(255, 255, 255, 0.7); "
-            "background: transparent; border: none; padding-top: 2px;"
-        )
-        layout.addWidget(self.players_label)
 
         # Player indicators row
         indicators_widget = QWidget()
@@ -163,21 +148,8 @@ class CascadingAttemptsWidget(QWidget):
 
         self.container.show()
 
-        self.attempt_label.setText(f"{self._ordinal(attempt_number)}\nATTEMPT")
-
         pts = points_available
         self.points_label.setText(f"{pts} POINT{'S' if pts != 1 else ''}\nAVAILABLE")
-
-        num = len(players_remaining)
-        if num == 0:
-            self.players_label.setText("NO PLAYERS\nREMAINING")
-        elif num == 1:
-            self.players_label.setText(
-                f"1 PLAYER\nCAN ATTEMPT\n(P{players_remaining[0]})"
-            )
-        else:
-            plist = ", ".join(f"P{p}" for p in players_remaining)
-            self.players_label.setText(f"{num} PLAYERS\nCAN ATTEMPT\n({plist})")
 
         attempted_players = all_players - set(players_remaining)
         for pid, ind in self.player_indicators.items():
@@ -187,10 +159,6 @@ class CascadingAttemptsWidget(QWidget):
             else:
                 ind.setStyleSheet(self._available_indicator_style())
                 ind.setText(f"P{pid}")
-
-        color_map = {1: "#39FF14", 2: "#ffd700", 3: "#ffa500"}
-        color = color_map.get(attempt_number, "#ff6b6b")
-        self.attempt_label.setStyleSheet(self._attempt_label_style(color))
 
     def reset(self):
         self.container.hide()
