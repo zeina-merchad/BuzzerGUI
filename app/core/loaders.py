@@ -1,7 +1,7 @@
 import json
-from pathlib import Path
-from typing import List, Tuple, Optional
 import uuid
+from pathlib import Path
+from typing import List, Optional, Tuple
 
 from app.constants import MediaType
 from app.core.models import GameConfig, Media, Question
@@ -9,6 +9,7 @@ from app.core.models import GameConfig, Media, Question
 
 class PackError(Exception):
     """Custom exception for pack loading/saving errors"""
+
     pass
 
 
@@ -130,7 +131,7 @@ def save_pack(pack_dir: Path, cfg: GameConfig, questions: List[Question]) -> Non
     # Save each question to separate file
     question_files = []
     for i, question in enumerate(questions):
-        filename = f"question_{i+1:03d}.json"
+        filename = f"question_{i + 1:03d}.json"
         question_path = questions_dir / filename
 
         try:
@@ -152,6 +153,7 @@ def save_pack(pack_dir: Path, cfg: GameConfig, questions: List[Question]) -> Non
         "reset_timer_each_attempt": cfg.reset_timer_each_attempt,
         "penalty_for_wrong": cfg.penalty_for_wrong,
         "bonus_for_speed": cfg.bonus_for_speed,
+        "reset_timer_each_attempt": cfg.reset_timer_each_attempt,
     }
 
     pack_json = pack_dir / "pack.json"
@@ -340,7 +342,7 @@ def _save_question(q_path: Path, question: Question) -> None:
 def _read_json(path: Path) -> dict:
     """Read JSON file"""
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except json.JSONDecodeError as e:
         raise PackError(f"Invalid JSON in {path.name}: {e}")
@@ -351,7 +353,7 @@ def _read_json(path: Path) -> dict:
 def _write_json(path: Path, data: dict) -> None:
     """Write JSON file"""
     try:
-        with open(path, 'w', encoding='utf-8') as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception as e:
         raise PackError(f"Failed to write {path.name}: {e}")
