@@ -867,13 +867,11 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         elif phase == Phase.SHOW_QUESTION.value:
             if self.game_started:
-                self.btn_next.setEnabled(False)
                 self.btn_next.setText("▶️ NEXT QUESTION")
 
         elif phase == Phase.BUZZED.value:
             if self.game_started:
                 self.btn_unlock.setEnabled(False)
-                self.btn_next.setEnabled(False)
 
         elif phase == Phase.IDLE.value:
             if self.game_started:
@@ -904,7 +902,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
                 self.btn_next.setEnabled(True)
                 self.btn_next.setText("▶️ NEXT QUESTION")
-                self.btn_unlock.setEnabled(False)
 
     def _render_question(self):
         try:
@@ -1112,10 +1109,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         self._grey_out_all_cards()
 
         self.buzzers_unlocked = False
-        # btn_next is disabled here — only re-enabled once the question reaches
-        # IDLE (all attempts exhausted / correct answer given).  This prevents
-        # the host from accidentally skipping a question during setup.
-        self.btn_next.setEnabled(False)
+        self.btn_next.setEnabled(True)
         self.btn_unlock.setEnabled(True)
         self.btn_unlock.setText("🔓 UNLOCK BUZZERS")
         self.btn_unlock.setStyleSheet(
@@ -1213,7 +1207,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
             self.buzzers_unlocked = False
             self.btn_next.setEnabled(True)
             self.btn_next.setText("▶️ NEXT QUESTION")
-            self.btn_unlock.setEnabled(False)
             self.status_label.setText(
                 "❌ All attempts exhausted! Click NEXT to continue."
             )
@@ -1282,7 +1275,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
             self.btn_next.setEnabled(True)
             self.btn_next.setText("▶️ NEXT QUESTION")
-            self.btn_unlock.setEnabled(False)
             return
 
         # WRONG answer ─────────────────────────────────────────────────────
