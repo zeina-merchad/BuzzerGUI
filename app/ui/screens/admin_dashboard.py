@@ -1,42 +1,78 @@
 from __future__ import annotations
 
-import uuid
 import shutil
+import uuid
 from pathlib import Path
 from typing import List, Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QScrollArea, QFrame, QSpinBox, QLineEdit,
-    QTextEdit, QComboBox, QFileDialog, QMessageBox, QGroupBox,
-    QFormLayout, QCheckBox, QSplitter, QTabWidget
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QSplitter,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
-from app.core.models import Question, Media, GameConfig
 from app.constants import MediaType
-
+from app.core.models import GameConfig, Media, Question
 
 # ═══════════════════════════════════════════════════════════════
 # EXCEL FORMAT
 # ═══════════════════════════════════════════════════════════════
 
 XLSX_COLUMNS = [
-    "id", "round", "text",
-    "option_a", "option_b", "option_c", "option_d",
-    "correct_index", "difficulty",
-    "points_first_attempt", "points_second_attempt",
-    "points_third_attempt", "points_fourth_attempt",
-    "max_attempts", "media_type", "media_path", "tags",
+    "id",
+    "round",
+    "text",
+    "option_a",
+    "option_b",
+    "option_c",
+    "option_d",
+    "correct_index",
+    "difficulty",
+    "points_first_attempt",
+    "points_second_attempt",
+    "points_third_attempt",
+    "points_fourth_attempt",
+    "max_attempts",
+    "media_type",
+    "media_path",
+    "tags",
     "enabled",
 ]
 
 XLSX_HEADERS = [
-    "ID", "Round", "Question Text",
-    "Option A", "Option B", "Option C", "Option D",
-    "Correct (0-3)", "Difficulty",
-    "Pts 1st", "Pts 2nd", "Pts 3rd", "Pts 4th",
-    "Max Attempts", "Media Type", "Media Path", "Tags",
+    "ID",
+    "Round",
+    "Question Text",
+    "Option A",
+    "Option B",
+    "Option C",
+    "Option D",
+    "Correct (0-3)",
+    "Difficulty",
+    "Pts 1st",
+    "Pts 2nd",
+    "Pts 3rd",
+    "Pts 4th",
+    "Max Attempts",
+    "Media Type",
+    "Media Path",
+    "Tags",
     "Enabled",
 ]
 
@@ -45,12 +81,15 @@ XLSX_WIDTHS = [18, 8, 55, 28, 28, 28, 28, 14, 12, 9, 9, 9, 9, 13, 12, 35, 25, 10
 
 def question_to_row(q: Question, enabled: bool = True) -> list:
     return [
-        q.id, q.round, q.text,
+        q.id,
+        q.round,
+        q.text,
         q.options[0] if len(q.options) > 0 else "",
         q.options[1] if len(q.options) > 1 else "",
         q.options[2] if len(q.options) > 2 else "",
         q.options[3] if len(q.options) > 3 else "",
-        q.correct_index, q.difficulty,
+        q.correct_index,
+        q.difficulty,
         getattr(q, "points_first_attempt", 3),
         getattr(q, "points_second_attempt", 2),
         getattr(q, "points_third_attempt", 1),
@@ -106,9 +145,14 @@ def row_to_question(row: dict, row_num: int) -> tuple[Question, bool]:
     is_enabled = enabled_str in ("YES", "Y", "TRUE", "1", "ENABLED")
 
     q = Question(
-        id=qid, round=rnd, text=text, options=options, correct_index=correct_index,
+        id=qid,
+        round=rnd,
+        text=text,
+        options=options,
+        correct_index=correct_index,
         media=Media(type=media_type, path=media_path),
-        difficulty=difficulty, tags=tags,
+        difficulty=difficulty,
+        tags=tags,
         points_first_attempt=_int("points_first_attempt", 3),
         points_second_attempt=_int("points_second_attempt", 2),
         points_third_attempt=_int("points_third_attempt", 1),
@@ -129,29 +173,29 @@ def export_to_excel(
         disabled_ids = set()
 
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Questions"
 
-    HDR_BG     = "1F4E79"
-    HDR_FG     = "FFFFFF"
-    ROW_EVEN   = "FFFFFF"
-    ROW_ODD    = "EBF3FB"
+    HDR_BG = "1F4E79"
+    HDR_FG = "FFFFFF"
+    ROW_EVEN = "FFFFFF"
+    ROW_ODD = "EBF3FB"
     BORDER_CLR = "BDD7EE"
 
     DIFF_COLORS = {"easy": "1E8449", "medium": "B7770D", "hard": "C0392B"}
-    CORRECT_COLOR  = "1F4E79"
+    CORRECT_COLOR = "1F4E79"
     DISABLED_COLOR = "C0392B"
-    ENABLED_COLOR  = "1E8449"
+    ENABLED_COLOR = "1E8449"
 
-    thin   = Side(border_style="thin", color=BORDER_CLR)
+    thin = Side(border_style="thin", color=BORDER_CLR)
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    hdr_font  = Font(name="Calibri", bold=True, color=HDR_FG, size=11)
-    hdr_fill  = PatternFill("solid", fgColor=HDR_BG)
+    hdr_font = Font(name="Calibri", bold=True, color=HDR_FG, size=11)
+    hdr_fill = PatternFill("solid", fgColor=HDR_BG)
     hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     ws.row_dimensions[1].height = 36
 
@@ -164,22 +208,24 @@ def export_to_excel(
 
     for row_idx, q in enumerate(questions, start=2):
         is_enabled = q.id not in disabled_ids
-        row_data   = question_to_row(q, is_enabled)
-        bg_hex     = ROW_EVEN if row_idx % 2 == 0 else ROW_ODD
-        row_fill   = PatternFill("solid", fgColor=bg_hex)
+        row_data = question_to_row(q, is_enabled)
+        bg_hex = ROW_EVEN if row_idx % 2 == 0 else ROW_ODD
+        row_fill = PatternFill("solid", fgColor=bg_hex)
         ws.row_dimensions[row_idx].height = 22
 
         for col_idx, value in enumerate(row_data, start=1):
-            cell           = ws.cell(row=row_idx, column=col_idx, value=value)
-            cell.fill      = row_fill
-            cell.border    = border
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.fill = row_fill
+            cell.border = border
             cell.alignment = Alignment(
                 vertical="center",
                 wrap_text=(col_idx == 3),
                 horizontal="left" if col_idx == 3 else "center",
             )
             if col_idx == 8:
-                cell.font = Font(name="Calibri", bold=True, color=CORRECT_COLOR, size=11)
+                cell.font = Font(
+                    name="Calibri", bold=True, color=CORRECT_COLOR, size=11
+                )
             elif col_idx == 9:
                 color = DIFF_COLORS.get(str(value).lower(), "555555")
                 cell.font = Font(name="Calibri", bold=True, color=color, size=11)
@@ -225,8 +271,11 @@ def export_to_excel(
     ]
     for r, (text, bold) in enumerate(instructions, start=1):
         cell = ws2.cell(row=r, column=1, value=text)
-        cell.font = Font(name="Calibri", bold=True, color="1F4E79", size=13) if bold \
-                    else Font(name="Calibri", color="333333", size=11)
+        cell.font = (
+            Font(name="Calibri", bold=True, color="1F4E79", size=13)
+            if bold
+            else Font(name="Calibri", color="333333", size=11)
+        )
 
     if config is not None:
         ws_cfg = wb.create_sheet("Config")
@@ -237,25 +286,30 @@ def export_to_excel(
         cfg_hdr_fill = PatternFill("solid", fgColor=HDR_BG)
         for col, txt in enumerate(["Setting", "Value"], start=1):
             c = ws_cfg.cell(row=1, column=col, value=txt)
-            c.font  = cfg_hdr_font
-            c.fill  = cfg_hdr_fill
+            c.font = cfg_hdr_font
+            c.fill = cfg_hdr_fill
             c.alignment = Alignment(horizontal="center", vertical="center")
         cfg_rows = [
-            ("name",                      config.name),
-            ("rounds",                    config.rounds),
-            ("questions_per_round",       config.questions_per_round),
-            ("timer_seconds",             config.timer_seconds),
-            ("answer_seconds",            config.answer_seconds),
-            ("shuffle_questions",         config.shuffle_questions),
-            ("enable_cascading_attempts", getattr(config, "enable_cascading_attempts", True)),
-            ("penalty_for_wrong",         getattr(config, "penalty_for_wrong", 0)),
+            ("name", config.name),
+            ("rounds", config.rounds),
+            ("questions_per_round", config.questions_per_round),
+            ("timer_seconds", config.timer_seconds),
+            ("answer_seconds", config.answer_seconds),
+            ("shuffle_questions", config.shuffle_questions),
+            (
+                "enable_cascading_attempts",
+                getattr(config, "enable_cascading_attempts", True),
+            ),
+            ("penalty_for_wrong", getattr(config, "penalty_for_wrong", 0)),
         ]
         for row_idx, (key, val) in enumerate(cfg_rows, start=2):
             ka = ws_cfg.cell(row=row_idx, column=1, value=key)
             va = ws_cfg.cell(row=row_idx, column=2, value=str(val))
             ka.font = Font(name="Calibri", bold=True, color="1F4E79", size=11)
             va.font = Font(name="Calibri", color="333333", size=11)
-            bg = PatternFill("solid", fgColor="FFFFFF" if row_idx % 2 == 0 else "EBF3FB")
+            bg = PatternFill(
+                "solid", fgColor="FFFFFF" if row_idx % 2 == 0 else "EBF3FB"
+            )
             ka.fill = va.fill = bg
 
     wb.save(path)
@@ -326,17 +380,18 @@ def import_from_excel(path: Path) -> tuple[List[Question], set, dict]:
 # QUESTION LIST ITEM
 # ═══════════════════════════════════════════════════════════════
 
+
 class QuestionListItem(QFrame):
-    edit_clicked      = Signal(str)
-    delete_clicked    = Signal(str)
+    edit_clicked = Signal(str)
+    delete_clicked = Signal(str)
     duplicate_clicked = Signal(str)
-    toggle_clicked    = Signal(str, bool)
+    toggle_clicked = Signal(str, bool)
 
     def __init__(self, question: Question, index: int, enabled: bool = True):
         super().__init__()
-        self.question  = question
-        self.index     = index
-        self._enabled  = enabled
+        self.question = question
+        self.index = index
+        self._enabled = enabled
         self._apply_frame_style()
 
         layout = QHBoxLayout(self)
@@ -361,7 +416,9 @@ class QuestionListItem(QFrame):
         info = QVBoxLayout()
         info.setSpacing(6)
 
-        txt = QLabel(question.text[:70] + "…" if len(question.text) > 70 else question.text)
+        txt = QLabel(
+            question.text[:70] + "…" if len(question.text) > 70 else question.text
+        )
         txt.setWordWrap(False)
         txt.setStyleSheet("font-size: 14px; font-weight: 700; color: white;")
 
@@ -387,7 +444,10 @@ class QuestionListItem(QFrame):
         diff_colors = {"easy": "#2ecc71", "medium": "#f39c12", "hard": "#e74c3c"}
         for t, c in [
             (f"Round {question.round}", "rgba(255,255,255,0.6)"),
-            (f"● {question.difficulty.upper()}", diff_colors.get(question.difficulty, "#888")),
+            (
+                f"● {question.difficulty.upper()}",
+                diff_colors.get(question.difficulty, "#888"),
+            ),
             (f"⭐ {getattr(question, 'points_first_attempt', 3)} pts", "#ffd700"),
         ]:
             lbl = QLabel(t)
@@ -483,21 +543,22 @@ class QuestionListItem(QFrame):
 # ADMIN DASHBOARD
 # ═══════════════════════════════════════════════════════════════
 
+
 class AdminDashboard(QWidget):
-    config_changed    = Signal(GameConfig)
+    config_changed = Signal(GameConfig)
     questions_changed = Signal(list)
-    pack_saved        = Signal(str)
+    pack_saved = Signal(str)
 
     def __init__(self, config: GameConfig, questions: list):
         super().__init__()
-        self.config               = config
+        self.config = config
         self.questions: List[Question] = questions.copy()
         self.current_question_id: Optional[str] = None
-        self.disabled_ids: set    = set()
+        self.disabled_ids: set = set()
         self.current_excel_path: Optional[Path] = None
         self.has_unsaved_changes: bool = False
-        self._game_active: bool   = False
-        self._item_cache: dict    = {}
+        self._game_active: bool = False
+        self._item_cache: dict = {}
 
         self._build_ui()
 
@@ -514,25 +575,31 @@ class AdminDashboard(QWidget):
         # Header bar
         hdr_lay = QHBoxLayout()
         hdr = QLabel("⚙️ EXCEL QUESTION MANAGER")
-        hdr.setStyleSheet("font-size: 24px; font-weight: 900; color: #39FF14; letter-spacing: 2px; padding: 10px;")
+        hdr.setStyleSheet(
+            "font-size: 24px; font-weight: 900; color: #39FF14; letter-spacing: 2px; padding: 10px;"
+        )
         bl = QPushButton("📂 Load Excel")
+        bn = QPushButton("📄 New Pack")
         bs = QPushButton("💾 Save Excel")
         ba = QPushButton("💾 Save As")
         bx = QPushButton("📤 Export Selected")
-        for b in (bl, bs, ba, bx):
+        for b in (bl, bn, bs, ba, bx):
             b.setStyleSheet(self._btn())
             b.setMinimumHeight(45)
         bl.clicked.connect(self._load)
+        bn.clicked.connect(self._new_pack)
         bs.clicked.connect(self._save)
         ba.clicked.connect(self._save_as)
         bx.clicked.connect(self._export)
         hdr_lay.addWidget(hdr)
         hdr_lay.addStretch()
-        for b in (bl, bs, ba, bx):
+        for b in (bl, bn, bs, ba, bx):
             hdr_lay.addWidget(b)
         root.addLayout(hdr_lay)
 
-        self.file_lbl = QLabel("📂 Click '📂 Load Excel' to get started • No file loaded")
+        self.file_lbl = QLabel(
+            "📂 Click '📂 Load Excel' to get started • No file loaded"
+        )
         self.file_lbl.setStyleSheet(
             "font-size: 12px; color: rgba(255,255,255,0.5); "
             "background: rgba(20,30,45,0.3); border: 1px solid rgba(255,255,255,0.1); "
@@ -551,7 +618,7 @@ class AdminDashboard(QWidget):
             "QTabBar::tab:selected { background: rgba(57,255,20,0.2); border-color: #39FF14; }"
         )
         tabs.addTab(self._create_questions_tab(), "📝 Questions")
-        tabs.addTab(self._create_settings_tab(),  "⚙️ Settings")
+        tabs.addTab(self._create_settings_tab(), "⚙️ Settings")
         root.addWidget(tabs, stretch=1)
 
         bot = QHBoxLayout()
@@ -576,7 +643,9 @@ class AdminDashboard(QWidget):
     def _mark_unsaved_changes(self):
         self.has_unsaved_changes = True
         if self.current_excel_path:
-            self.file_lbl.setText(f"📄 {self.current_excel_path.name} ● UNSAVED CHANGES")
+            self.file_lbl.setText(
+                f"📄 {self.current_excel_path.name} ● UNSAVED CHANGES"
+            )
             self.file_lbl.setStyleSheet(
                 "font-size: 12px; color: #f39c12; "
                 "background: rgba(243,156,18,0.15); border: 1px solid #f39c12; "
@@ -596,7 +665,8 @@ class AdminDashboard(QWidget):
     def closeEvent(self, event):
         if self.current_excel_path and self.questions and self.has_unsaved_changes:
             reply = QMessageBox.question(
-                self, "💾 Unsaved Changes",
+                self,
+                "💾 Unsaved Changes",
                 f"<b>You have unsaved changes!</b><br><br>"
                 f"File: {self.current_excel_path.name}<br>"
                 f"Enabled: {len(self.questions) - len(self.disabled_ids)}<br>"
@@ -606,7 +676,9 @@ class AdminDashboard(QWidget):
             )
             if reply == QMessageBox.Yes:
                 try:
-                    export_to_excel(self.questions, self.current_excel_path, self.disabled_ids)
+                    export_to_excel(
+                        self.questions, self.current_excel_path, self.disabled_ids
+                    )
                     self.pack_saved.emit(str(self.current_excel_path))
                     self._sync_to_engine()
                     self._clear_unsaved_changes()
@@ -638,11 +710,11 @@ class AdminDashboard(QWidget):
         )
         stats_lay = QHBoxLayout(stats_frame)
         stats_lay.setSpacing(10)
-        self.c_tot  = self._mini_card("Total",   "0", "#3498db")
-        self.c_sel  = self._mini_card("Enabled", "0", "#2ecc71")
-        self.c_easy = self._mini_card("Easy",    "0", "#2ecc71")
-        self.c_med  = self._mini_card("Medium",  "0", "#f39c12")
-        self.c_hard = self._mini_card("Hard",    "0", "#e74c3c")
+        self.c_tot = self._mini_card("Total", "0", "#3498db")
+        self.c_sel = self._mini_card("Enabled", "0", "#2ecc71")
+        self.c_easy = self._mini_card("Easy", "0", "#2ecc71")
+        self.c_med = self._mini_card("Medium", "0", "#f39c12")
+        self.c_hard = self._mini_card("Hard", "0", "#e74c3c")
         for c in (self.c_tot, self.c_sel, self.c_easy, self.c_med, self.c_hard):
             stats_lay.addWidget(c)
         stats_lay.addStretch()
@@ -650,7 +722,9 @@ class AdminDashboard(QWidget):
         self._upd_stats()
 
         split = QSplitter(Qt.Horizontal)
-        split.setStyleSheet("QSplitter::handle { background: rgba(57,255,20,0.2); width: 3px; }")
+        split.setStyleSheet(
+            "QSplitter::handle { background: rgba(57,255,20,0.2); width: 3px; }"
+        )
         split.addWidget(self._qlist())
         split.addWidget(self._editor())
         split.setStretchFactor(0, 2)
@@ -681,33 +755,40 @@ class AdminDashboard(QWidget):
         form.setSpacing(15)
         form.setHorizontalSpacing(20)
 
-        self.pack_name   = QLineEdit(self.config.name);  self.pack_name.setStyleSheet(self._inp())
-        self.rounds_spin = self._sp(1, 10,  self.config.rounds)
-        self.qpr_spin    = self._sp(1, 100, self.config.questions_per_round)
-        self.timer_spin  = self._sp(5, 120, self.config.timer_seconds)
-        self.answer_spin = self._sp(3, 60,  self.config.answer_seconds)
+        self.pack_name = QLineEdit(self.config.name)
+        self.pack_name.setStyleSheet(self._inp())
+        self.rounds_spin = self._sp(1, 10, self.config.rounds)
+        self.qpr_spin = self._sp(1, 100, self.config.questions_per_round)
+        self.timer_spin = self._sp(5, 120, self.config.timer_seconds)
+        self.answer_spin = self._sp(3, 60, self.config.answer_seconds)
 
         self.shuffle_chk = QCheckBox("Shuffle question order")
         self.shuffle_chk.setChecked(self.config.shuffle_questions)
         self.shuffle_chk.setStyleSheet("color: white; font-size: 13px;")
 
-        form.addRow(self._l("Pack Name:"),           self.pack_name)
-        form.addRow(self._l("Number of Rounds:"),    self.rounds_spin)
+        form.addRow(self._l("Pack Name:"), self.pack_name)
+        form.addRow(self._l("Number of Rounds:"), self.rounds_spin)
         form.addRow(self._l("Questions per Round:"), self.qpr_spin)
-        form.addRow(self._l("Timer (seconds):"),     self.timer_spin)
+        form.addRow(self._l("Timer (seconds):"), self.timer_spin)
         form.addRow(self._l("Answer Time (seconds):"), self.answer_spin)
-        form.addRow(self._l("Shuffle:"),             self.shuffle_chk)
+        form.addRow(self._l("Shuffle:"), self.shuffle_chk)
 
         sep = QLabel("── Cascading Attempts ──")
-        sep.setStyleSheet("font-size: 13px; font-weight: 900; color: #39FF14; padding-top: 10px;")
+        sep.setStyleSheet(
+            "font-size: 13px; font-weight: 900; color: #39FF14; padding-top: 10px;"
+        )
         form.addRow("", sep)
 
         self.cascade_chk = QCheckBox("Enable cascading attempts")
-        self.cascade_chk.setChecked(getattr(self.config, "enable_cascading_attempts", True))
+        self.cascade_chk.setChecked(
+            getattr(self.config, "enable_cascading_attempts", True)
+        )
         self.cascade_chk.setStyleSheet("color: white; font-size: 13px;")
-        self.penalty_spin = self._sp(0, 10, getattr(self.config, "penalty_for_wrong", 0))
+        self.penalty_spin = self._sp(
+            0, 10, getattr(self.config, "penalty_for_wrong", 0)
+        )
 
-        form.addRow(self._l("Mode:"),            self.cascade_chk)
+        form.addRow(self._l("Mode:"), self.cascade_chk)
         form.addRow(self._l("Penalty (wrong):"), self.penalty_spin)
 
         save_btn = QPushButton("💾 Save Settings")
@@ -723,6 +804,7 @@ class AdminDashboard(QWidget):
     def _save_settings(self):
         """Save settings via dataclasses.replace() — GameConfig is frozen=True."""
         import dataclasses
+
         kwargs = dict(
             name=self.pack_name.text().strip() or self.config.name,
             rounds=self.rounds_spin.value(),
@@ -741,7 +823,12 @@ class AdminDashboard(QWidget):
 
         if self.current_excel_path and self.current_excel_path.exists():
             try:
-                export_to_excel(self.questions, self.current_excel_path, self.disabled_ids, config=self.config)
+                export_to_excel(
+                    self.questions,
+                    self.current_excel_path,
+                    self.disabled_ids,
+                    config=self.config,
+                )
                 self.status.setText("✅ Settings saved to Excel")
             except Exception as e:
                 self.status.setText(f"⚠️ Settings applied but Excel write failed: {e}")
@@ -768,9 +855,12 @@ class AdminDashboard(QWidget):
         self.filter_combo.setStyleSheet(self._inp())
         self.filter_combo.currentIndexChanged.connect(self._ref)
 
-        ba = QPushButton("☑️ Select All");   ba.setStyleSheet(self._sbtn())
-        bn = QPushButton("☐ Deselect All"); bn.setStyleSheet(self._sbtn())
-        bw = QPushButton("➕ New");          bw.setStyleSheet(self._sbtn())
+        ba = QPushButton("☑️ Select All")
+        ba.setStyleSheet(self._sbtn())
+        bn = QPushButton("☐ Deselect All")
+        bn.setStyleSheet(self._sbtn())
+        bw = QPushButton("➕ New")
+        bw.setStyleSheet(self._sbtn())
         ba.clicked.connect(self._sel_all)
         bn.clicked.connect(self._desel_all)
         bw.clicked.connect(self._new)
@@ -797,9 +887,13 @@ class AdminDashboard(QWidget):
         self.qlay.setContentsMargins(8, 8, 8, 8)
 
         if not self.questions:
-            ph = QLabel("📂 No Excel file loaded yet\n\nClick '📂 Load Excel' to import questions.")
+            ph = QLabel(
+                "📂 No Excel file loaded yet\n\nClick '📂 Load Excel' to import questions."
+            )
             ph.setAlignment(Qt.AlignCenter)
-            ph.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 14px; padding: 50px; background: transparent;")
+            ph.setStyleSheet(
+                "color: rgba(255,255,255,0.5); font-size: 14px; padding: 50px; background: transparent;"
+            )
             self.qlay.addWidget(ph)
 
         sc.setWidget(list_container)
@@ -820,12 +914,12 @@ class AdminDashboard(QWidget):
             "QGroupBox:disabled { color: #666; border-color: #444; }"
         )
         lay = QVBoxLayout(self.eg)
-        sc  = QScrollArea()
+        sc = QScrollArea()
         sc.setWidgetResizable(True)
         sc.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         cnt = QWidget()
-        fm  = QFormLayout(cnt)
+        fm = QFormLayout(cnt)
         fm.setSpacing(12)
         fm.setHorizontalSpacing(15)
 
@@ -837,44 +931,55 @@ class AdminDashboard(QWidget):
         self.et.setMaximumHeight(100)
         self.et.setStyleSheet(self._inp())
         self.question_label = QLabel("Question Text:")
-        self.question_label.setStyleSheet("font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.8);")
+        self.question_label.setStyleSheet(
+            "font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.8);"
+        )
         fm.addRow(self.question_label, self.et)
 
         self.eo = []
         for i in range(4):
             o = QLineEdit()
-            o.setPlaceholderText(f"Option {chr(65+i)}...")
+            o.setPlaceholderText(f"Option {chr(65 + i)}...")
             o.setStyleSheet(self._inp())
             self.eo.append(o)
-            fm.addRow(self._l(f"Option {chr(65+i)}:"), o)
+            fm.addRow(self._l(f"Option {chr(65 + i)}:"), o)
 
-        self.ec = QComboBox(); self.ec.addItems(["A","B","C","D"]); self.ec.setStyleSheet(self._inp())
-        self.ed = QComboBox(); self.ed.addItems(["Easy","Medium","Hard"]); self.ed.setCurrentIndex(1); self.ed.setStyleSheet(self._inp())
-        fm.addRow(self._l("Correct:"),    self.ec)
+        self.ec = QComboBox()
+        self.ec.addItems(["A", "B", "C", "D"])
+        self.ec.setStyleSheet(self._inp())
+        self.ed = QComboBox()
+        self.ed.addItems(["Easy", "Medium", "Hard"])
+        self.ed.setCurrentIndex(1)
+        self.ed.setStyleSheet(self._inp())
+        fm.addRow(self._l("Correct:"), self.ec)
         fm.addRow(self._l("Difficulty:"), self.ed)
 
         s = QLabel("⭐ SCORING")
-        s.setStyleSheet("font-size: 14px; font-weight: 900; color: #39FF14; padding-top: 10px;")
+        s.setStyleSheet(
+            "font-size: 14px; font-weight: 900; color: #39FF14; padding-top: 10px;"
+        )
         fm.addRow("", s)
 
         self.ep1 = self._sp(0, 20, 3)
         self.ep2 = self._sp(0, 20, 2)
         self.ep3 = self._sp(0, 20, 1)
         self.ep4 = self._sp(0, 20, 0)
-        self.ema = self._sp(1,  4, 3)
+        self.ema = self._sp(1, 4, 3)
         fm.addRow(self._l("Pts - 1st:"), self.ep1)
         fm.addRow(self._l("Pts - 2nd:"), self.ep2)
         fm.addRow(self._l("Pts - 3rd:"), self.ep3)
         fm.addRow(self._l("Pts - 4th:"), self.ep4)
-        fm.addRow(self._l("Max Att:"),   self.ema)
+        fm.addRow(self._l("Max Att:"), self.ema)
 
         s2 = QLabel("📎 MEDIA")
-        s2.setStyleSheet("font-size: 14px; font-weight: 900; color: #39FF14; padding-top: 10px;")
+        s2.setStyleSheet(
+            "font-size: 14px; font-weight: 900; color: #39FF14; padding-top: 10px;"
+        )
         fm.addRow("", s2)
 
         mr = QHBoxLayout()
         self.emt = QComboBox()
-        self.emt.addItems(["None","Image","Audio","Video"])
+        self.emt.addItems(["None", "Image", "Audio", "Video"])
         self.emt.currentTextChanged.connect(self._mt_ch)
         self.emt.setStyleSheet(self._inp())
         self.bb = QPushButton("📁 Browse")
@@ -892,8 +997,14 @@ class AdminDashboard(QWidget):
         fm.addRow(self._l("Path:"), self.emp)
 
         br = QHBoxLayout()
-        bsv = QPushButton("💾 Save");   bsv.setMinimumHeight(40); bsv.setStyleSheet(self._btn()); bsv.clicked.connect(self._sv_q)
-        bcn = QPushButton("✖️ Cancel"); bcn.setMinimumHeight(40); bcn.setStyleSheet(self._btn()); bcn.clicked.connect(self._cn)
+        bsv = QPushButton("💾 Save")
+        bsv.setMinimumHeight(40)
+        bsv.setStyleSheet(self._btn())
+        bsv.clicked.connect(self._sv_q)
+        bcn = QPushButton("✖️ Cancel")
+        bcn.setMinimumHeight(40)
+        bcn.setStyleSheet(self._btn())
+        bcn.clicked.connect(self._cn)
         br.addWidget(bsv)
         br.addWidget(bcn)
         fm.addRow("", br)
@@ -908,22 +1019,33 @@ class AdminDashboard(QWidget):
         import dataclasses
 
         def _int(key, fb):
-            try: return int(cfg[key])
-            except (KeyError, ValueError): return fb
+            try:
+                return int(cfg[key])
+            except (KeyError, ValueError):
+                return fb
+
         def _bool(key, fb):
-            try: return cfg[key].lower() in ("true","1","yes")
-            except (KeyError, AttributeError): return fb
+            try:
+                return cfg[key].lower() in ("true", "1", "yes")
+            except (KeyError, AttributeError):
+                return fb
+
         def _str(key, fb):
             return cfg.get(key, fb) or fb
 
-        name    = _str("name",  self.config.name)
-        rounds  = _int("rounds", self.config.rounds)
-        qpr     = _int("questions_per_round", self.config.questions_per_round)
-        timer   = _int("timer_seconds", self.config.timer_seconds)
-        answer  = _int("answer_seconds", self.config.answer_seconds)
+        name = _str("name", self.config.name)
+        rounds = _int("rounds", self.config.rounds)
+        qpr = _int("questions_per_round", self.config.questions_per_round)
+        timer = _int("timer_seconds", self.config.timer_seconds)
+        answer = _int("answer_seconds", self.config.answer_seconds)
         shuffle = _bool("shuffle_questions", self.config.shuffle_questions)
-        cascade = _bool("enable_cascading_attempts", getattr(self.config,"enable_cascading_attempts",True))
-        penalty = _int("penalty_for_wrong", getattr(self.config,"penalty_for_wrong",0))
+        cascade = _bool(
+            "enable_cascading_attempts",
+            getattr(self.config, "enable_cascading_attempts", True),
+        )
+        penalty = _int(
+            "penalty_for_wrong", getattr(self.config, "penalty_for_wrong", 0)
+        )
 
         self.pack_name.setText(name)
         self.rounds_spin.setValue(rounds)
@@ -931,13 +1053,23 @@ class AdminDashboard(QWidget):
         self.timer_spin.setValue(timer)
         self.answer_spin.setValue(answer)
         self.shuffle_chk.setChecked(shuffle)
-        if hasattr(self, "cascade_chk"): self.cascade_chk.setChecked(cascade)
-        if hasattr(self, "penalty_spin"): self.penalty_spin.setValue(penalty)
+        if hasattr(self, "cascade_chk"):
+            self.cascade_chk.setChecked(cascade)
+        if hasattr(self, "penalty_spin"):
+            self.penalty_spin.setValue(penalty)
 
-        kwargs = dict(name=name, rounds=rounds, questions_per_round=qpr,
-                      timer_seconds=timer, answer_seconds=answer, shuffle_questions=shuffle)
-        if hasattr(self.config,"enable_cascading_attempts"): kwargs["enable_cascading_attempts"] = cascade
-        if hasattr(self.config,"penalty_for_wrong"):         kwargs["penalty_for_wrong"] = penalty
+        kwargs = dict(
+            name=name,
+            rounds=rounds,
+            questions_per_round=qpr,
+            timer_seconds=timer,
+            answer_seconds=answer,
+            shuffle_questions=shuffle,
+        )
+        if hasattr(self.config, "enable_cascading_attempts"):
+            kwargs["enable_cascading_attempts"] = cascade
+        if hasattr(self.config, "penalty_for_wrong"):
+            kwargs["penalty_for_wrong"] = penalty
 
         self.config = dataclasses.replace(self.config, **kwargs)
         self.config_changed.emit(self.config)
@@ -945,64 +1077,159 @@ class AdminDashboard(QWidget):
 
     # ── LOAD / SAVE / EXPORT ─────────────────────────────────────────────────
 
+    def _new_pack(self):
+        """Create a blank Excel pack, save it to a user-chosen location, then load it."""
+        if self.has_unsaved_changes:
+            reply = QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                "You have unsaved changes. Discard and create a new pack?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+        p, _ = QFileDialog.getSaveFileName(
+            self, "Create New Question Pack", "questions.xlsx", "Excel Files (*.xlsx)"
+        )
+        if not p:
+            return
+
+        path = Path(p)
+        if not path.suffix:
+            path = path.with_suffix(".xlsx")
+
+        try:
+            # Build one blank template question so the file isn't empty
+            import uuid as _uuid
+
+            from app.constants import MediaType
+            from app.core.models import Media, Question
+
+            template_q = Question(
+                id=f"q_{_uuid.uuid4().hex[:8]}",
+                round=1,
+                text="Example question — replace with your own",
+                options=["Option A", "Option B", "Option C", "Option D"],
+                correct_index=0,
+                media=Media(type=MediaType("none"), path=None),
+                difficulty="medium",
+                tags=[],
+                points_first_attempt=3,
+                points_second_attempt=2,
+                points_third_attempt=1,
+                points_fourth_attempt=0,
+                max_attempts=3,
+            )
+
+            export_to_excel([template_q], path, disabled_ids=set(), config=self.config)
+
+            # Now load it so the user can start editing immediately
+            self.questions = [template_q]
+            self.disabled_ids = set()
+            self.current_excel_path = path
+            self.has_unsaved_changes = False
+
+            self.file_lbl.setText(f"📄 {path.name}  — new pack created")
+            self.file_lbl.setStyleSheet(
+                "font-size: 12px; color: #39FF14; "
+                "background: rgba(57,255,20,0.1); border: 1px solid #39FF14; "
+                "border-radius: 6px; padding: 8px 12px;"
+            )
+            self.status.setText(f"✅ New pack created: {path.name}")
+            self._ref_force()
+            self._upd_stats()
+            self._sync_to_engine()
+
+            QMessageBox.information(
+                self,
+                "✅ New Pack Created",
+                f"<b>{path.name}</b> has been created with a template question.<br><br>"
+                f"Edit or delete the template, add your own questions, then save.",
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "❌ Failed", f"Could not create pack:\n{e}")
+
     def _load(self):
-        p, _ = QFileDialog.getOpenFileName(self, "Load Questions from Excel", "", "Excel Files (*.xlsx *.xls)")
+        p, _ = QFileDialog.getOpenFileName(
+            self, "Load Questions from Excel", "", "Excel Files (*.xlsx *.xls)"
+        )
         if not p:
             return
         try:
             self.status.setText("⏳ Loading Excel file...")
             ld, disabled, config_dict = import_from_excel(Path(p))
-            self.questions       = ld
-            self.disabled_ids    = disabled
+            self.questions = ld
+            self.disabled_ids = disabled
             self.current_excel_path = Path(p)
-            enabled_count        = len(ld) - len(disabled)
+            enabled_count = len(ld) - len(disabled)
 
             if config_dict:
                 self._apply_config_dict(config_dict)
 
             self.file_lbl.setText(f"📄 Loaded: {Path(p).name}")
             self._clear_unsaved_changes()
-            self.status.setText(f"✅ Loaded {len(ld)} questions ({enabled_count} enabled)")
+            self.status.setText(
+                f"✅ Loaded {len(ld)} questions ({enabled_count} enabled)"
+            )
             self._ref_force()
             self._upd_stats()
             self._sync_to_engine()
 
-            QMessageBox.information(self, "✅ Excel Loaded Successfully",
+            QMessageBox.information(
+                self,
+                "✅ Excel Loaded Successfully",
                 f"<b>File:</b> {Path(p).name}<br><br>"
                 f"<b>Questions loaded:</b> {len(ld)}<br>"
                 f"<b>Enabled:</b> {enabled_count}<br>"
                 f"<b>Disabled:</b> {len(disabled)}<br><br>"
-                f"<b>Game engine:</b> Updated with {enabled_count} enabled questions")
+                f"<b>Game engine:</b> Updated with {enabled_count} enabled questions",
+            )
         except Exception as e:
             self.status.setText("❌ Load failed")
-            QMessageBox.critical(self, "❌ Load Failed",
+            QMessageBox.critical(
+                self,
+                "❌ Load Failed",
                 f"<b>Could not load Excel file:</b><br><br>{e}<br><br>"
-                f"Check the Excel Format Guide for correct structure.")
+                f"Check the Excel Format Guide for correct structure.",
+            )
 
     def _save(self):
         if not self.current_excel_path:
             self._save_as()
             return
         try:
-            export_to_excel(self.questions, self.current_excel_path, self.disabled_ids, config=self.config)
+            export_to_excel(
+                self.questions,
+                self.current_excel_path,
+                self.disabled_ids,
+                config=self.config,
+            )
             self.status.setText(f"✅ Saved {len(self.questions)} questions")
             self.pack_saved.emit(str(self.current_excel_path))
             self._sync_to_engine()
             self._clear_unsaved_changes()
             enabled_count = len(self.questions) - len(self.disabled_ids)
-            QMessageBox.information(self, "Success",
+            QMessageBox.information(
+                self,
+                "Success",
                 f"Saved {len(self.questions)} questions to:\n{self.current_excel_path.name}\n\n"
                 f"Enabled: {enabled_count}  Disabled: {len(self.disabled_ids)}\n\n"
-                f"Game engine updated with {enabled_count} enabled questions.")
+                f"Game engine updated with {enabled_count} enabled questions.",
+            )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Save failed:\n{e}")
 
     def _save_as(self):
-        p, _ = QFileDialog.getSaveFileName(self, "Save As", "questions.xlsx", "Excel (*.xlsx)")
+        p, _ = QFileDialog.getSaveFileName(
+            self, "Save As", "questions.xlsx", "Excel (*.xlsx)"
+        )
         if not p:
             return
         try:
-            export_to_excel(self.questions, Path(p), self.disabled_ids, config=self.config)
+            export_to_excel(
+                self.questions, Path(p), self.disabled_ids, config=self.config
+            )
             self.current_excel_path = Path(p)
             self.file_lbl.setText(f"📄 {Path(p).name}")
             self.status.setText(f"✅ Saved {len(self.questions)}")
@@ -1010,9 +1237,12 @@ class AdminDashboard(QWidget):
             self._sync_to_engine()
             self._clear_unsaved_changes()
             enabled_count = len(self.questions) - len(self.disabled_ids)
-            QMessageBox.information(self, "Success",
+            QMessageBox.information(
+                self,
+                "Success",
                 f"Saved {len(self.questions)} questions to:\n{Path(p).name}\n\n"
-                f"Enabled: {enabled_count}  Disabled: {len(self.disabled_ids)}")
+                f"Enabled: {enabled_count}  Disabled: {len(self.disabled_ids)}",
+            )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Save failed:\n{e}")
 
@@ -1020,36 +1250,46 @@ class AdminDashboard(QWidget):
         """Push enabled questions to game engine — never touches config."""
         enabled = [q for q in self.questions if q.id not in self.disabled_ids]
         self.questions_changed.emit(enabled)
-        print(f"[SYNC] Updated game engine: {len(enabled)}/{len(self.questions)} questions")
+        print(
+            f"[SYNC] Updated game engine: {len(enabled)}/{len(self.questions)} questions"
+        )
 
     def _export(self):
         sel = [q for q in self.questions if q.id not in self.disabled_ids]
         if not sel:
             QMessageBox.warning(self, "No Selection", "No questions selected")
             return
-        p, _ = QFileDialog.getSaveFileName(self, "Export Selected", "selected.xlsx", "Excel (*.xlsx)")
+        p, _ = QFileDialog.getSaveFileName(
+            self, "Export Selected", "selected.xlsx", "Excel (*.xlsx)"
+        )
         if not p:
             return
         try:
             export_to_excel(sel, Path(p), disabled_ids=set())
-            QMessageBox.information(self, "Success", f"Exported {len(sel)} enabled questions")
+            QMessageBox.information(
+                self, "Success", f"Exported {len(sel)} enabled questions"
+            )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Export failed:\n{e}")
 
     # ── QUESTION LIST REFRESH ─────────────────────────────────────────────────
 
     def _ref(self):
-        filter_mode = self.filter_combo.currentIndex() if hasattr(self, "filter_combo") else 0
+        filter_mode = (
+            self.filter_combo.currentIndex() if hasattr(self, "filter_combo") else 0
+        )
 
         filtered = []
         for i, q in enumerate(self.questions):
             is_enabled = q.id not in self.disabled_ids
-            if filter_mode == 1 and not is_enabled: continue
-            if filter_mode == 2 and is_enabled:     continue
+            if filter_mode == 1 and not is_enabled:
+                continue
+            if filter_mode == 2 and is_enabled:
+                continue
             filtered.append((i, q, is_enabled))
 
         visible_ids = [q.id for _, q, _ in filtered]
-        cached_ids  = list(self._item_cache.keys())
+        cached_ids = list(self._item_cache.keys())
 
         if visible_ids != cached_ids:
             while self.qlay.count():
@@ -1072,10 +1312,12 @@ class AdminDashboard(QWidget):
                 if item and hasattr(item, "update_enabled"):
                     item.update_enabled(enabled)
 
-        enabled_count  = len(self.questions) - len(self.disabled_ids)
+        enabled_count = len(self.questions) - len(self.disabled_ids)
         disabled_count = len(self.disabled_ids)
         if filter_mode == 0:
-            self.lbl.setText(f"📝 Questions ({len(self.questions)}) — {enabled_count} enabled, {disabled_count} disabled")
+            self.lbl.setText(
+                f"📝 Questions ({len(self.questions)}) — {enabled_count} enabled, {disabled_count} disabled"
+            )
         elif filter_mode == 1:
             self.lbl.setText(f"📝 Questions ({enabled_count} enabled shown)")
         else:
@@ -1089,12 +1331,18 @@ class AdminDashboard(QWidget):
 
     def _sel_all(self):
         self.disabled_ids.clear()
-        self._ref(); self._upd_stats(); self._sync_to_engine(); self._mark_unsaved_changes()
+        self._ref()
+        self._upd_stats()
+        self._sync_to_engine()
+        self._mark_unsaved_changes()
         self.status.setText("✅ All selected")
 
     def _desel_all(self):
         self.disabled_ids = {q.id for q in self.questions}
-        self._ref(); self._upd_stats(); self._sync_to_engine(); self._mark_unsaved_changes()
+        self._ref()
+        self._upd_stats()
+        self._sync_to_engine()
+        self._mark_unsaved_changes()
         self.status.setText("⬜ All deselected")
 
     def _tog(self, qid: str, en: bool):
@@ -1105,7 +1353,9 @@ class AdminDashboard(QWidget):
         self._upd_stats()
         self._mark_unsaved_changes()
         if self._game_active:
-            self.status.setText("⚠️ Changes staged — save Excel to apply after current game")
+            self.status.setText(
+                "⚠️ Changes staged — save Excel to apply after current game"
+            )
             return
         self._sync_to_engine()
 
@@ -1114,16 +1364,25 @@ class AdminDashboard(QWidget):
     def _new(self):
         self.current_question_id = None
         self.eg.setEnabled(True)
-        self.er.setValue(1); self.et.clear()
-        for o in self.eo: o.clear()
-        self.ec.setCurrentIndex(0); self.ed.setCurrentIndex(1)
-        self.ep1.setValue(3); self.ep2.setValue(2); self.ep3.setValue(1); self.ep4.setValue(0)
-        self.ema.setValue(3); self.emt.setCurrentIndex(0); self.emp.clear()
+        self.er.setValue(1)
+        self.et.clear()
+        for o in self.eo:
+            o.clear()
+        self.ec.setCurrentIndex(0)
+        self.ed.setCurrentIndex(1)
+        self.ep1.setValue(3)
+        self.ep2.setValue(2)
+        self.ep3.setValue(1)
+        self.ep4.setValue(0)
+        self.ema.setValue(3)
+        self.emt.setCurrentIndex(0)
+        self.emp.clear()
         self._mt_ch("None")
 
     def _ed(self, qid: str):
         q = next((x for x in self.questions if x.id == qid), None)
-        if not q: return
+        if not q:
+            return
         self.current_question_id = qid
         self.eg.setEnabled(True)
         self.er.setValue(q.round)
@@ -1131,13 +1390,20 @@ class AdminDashboard(QWidget):
         for i, o in enumerate(self.eo):
             o.setText(q.options[i] if i < len(q.options) else "")
         self.ec.setCurrentIndex(q.correct_index)
-        self.ed.setCurrentIndex({"easy":0,"medium":1,"hard":2}.get(q.difficulty,1))
-        self.ep1.setValue(getattr(q,"points_first_attempt",3))
-        self.ep2.setValue(getattr(q,"points_second_attempt",2))
-        self.ep3.setValue(getattr(q,"points_third_attempt",1))
-        self.ep4.setValue(getattr(q,"points_fourth_attempt",0))
-        self.ema.setValue(getattr(q,"max_attempts",3))
-        mi = {MediaType.NONE:0, MediaType.IMAGE:1, MediaType.AUDIO:2, MediaType.VIDEO:3}.get(q.media.type, 0)
+        self.ed.setCurrentIndex(
+            {"easy": 0, "medium": 1, "hard": 2}.get(q.difficulty, 1)
+        )
+        self.ep1.setValue(getattr(q, "points_first_attempt", 3))
+        self.ep2.setValue(getattr(q, "points_second_attempt", 2))
+        self.ep3.setValue(getattr(q, "points_third_attempt", 1))
+        self.ep4.setValue(getattr(q, "points_fourth_attempt", 0))
+        self.ema.setValue(getattr(q, "max_attempts", 3))
+        mi = {
+            MediaType.NONE: 0,
+            MediaType.IMAGE: 1,
+            MediaType.AUDIO: 2,
+            MediaType.VIDEO: 3,
+        }.get(q.media.type, 0)
         self.emt.setCurrentIndex(mi)
         self._mt_ch(self.emt.currentText())
         self.emp.setText(q.media.path or "")
@@ -1145,22 +1411,33 @@ class AdminDashboard(QWidget):
     def _sv_q(self):
         t = self.et.toPlainText().strip()
         if not t:
-            QMessageBox.warning(self, "Error", "Empty question"); return
+            QMessageBox.warning(self, "Error", "Empty question")
+            return
         opts = [o.text().strip() for o in self.eo]
         fill = [o for o in opts if o]
         if len(fill) < 2:
-            QMessageBox.warning(self, "Error", "Need 2+ options"); return
+            QMessageBox.warning(self, "Error", "Need 2+ options")
+            return
         ci = self.ec.currentIndex()
         if ci >= len(fill):
-            QMessageBox.warning(self, "Error", "Correct out of range"); return
+            QMessageBox.warning(self, "Error", "Correct out of range")
+            return
         mts = self.emt.currentText().lower()
-        m = Media(type=MediaType.NONE, path=None) if mts == "none" \
+        m = (
+            Media(type=MediaType.NONE, path=None)
+            if mts == "none"
             else Media(type=MediaType(mts), path=self.emp.text().strip() or None)
+        )
         try:
             q = Question(
                 id=self.current_question_id or f"q_{uuid.uuid4().hex[:8]}",
-                round=self.er.value(), text=t, options=fill, correct_index=ci,
-                media=m, difficulty=self.ed.currentText().lower(), tags=[],
+                round=self.er.value(),
+                text=t,
+                options=fill,
+                correct_index=ci,
+                media=m,
+                difficulty=self.ed.currentText().lower(),
+                tags=[],
                 points_first_attempt=self.ep1.value(),
                 points_second_attempt=self.ep2.value(),
                 points_third_attempt=self.ep3.value(),
@@ -1168,18 +1445,21 @@ class AdminDashboard(QWidget):
                 max_attempts=self.ema.value(),
             )
         except ValueError as e:
-            QMessageBox.warning(self, "Error", str(e)); return
+            QMessageBox.warning(self, "Error", str(e))
+            return
 
         if self.current_question_id:
             for i, x in enumerate(self.questions):
                 if x.id == self.current_question_id:
-                    self.questions[i] = q; break
+                    self.questions[i] = q
+                    break
         else:
             self.questions.append(q)
 
         self.eg.setEnabled(False)
         self.current_question_id = None
-        self._ref_force(); self._upd_stats()
+        self._ref_force()
+        self._upd_stats()
         self._mark_unsaved_changes()
         if self._game_active:
             self.status.setText("⚠️ Question saved — changes staged until game ends")
@@ -1193,19 +1473,27 @@ class AdminDashboard(QWidget):
 
     def _dup(self, qid: str):
         q = next((x for x in self.questions if x.id == qid), None)
-        if not q: return
+        if not q:
+            return
         nq = Question(
-            id=f"q_{uuid.uuid4().hex[:8]}", round=q.round, text=f"{q.text} (Copy)",
-            options=q.options.copy(), correct_index=q.correct_index,
-            media=q.media, difficulty=q.difficulty, tags=getattr(q,"tags",[]).copy(),
-            points_first_attempt=getattr(q,"points_first_attempt",3),
-            points_second_attempt=getattr(q,"points_second_attempt",2),
-            points_third_attempt=getattr(q,"points_third_attempt",1),
-            points_fourth_attempt=getattr(q,"points_fourth_attempt",0),
-            max_attempts=getattr(q,"max_attempts",3),
+            id=f"q_{uuid.uuid4().hex[:8]}",
+            round=q.round,
+            text=f"{q.text} (Copy)",
+            options=q.options.copy(),
+            correct_index=q.correct_index,
+            media=q.media,
+            difficulty=q.difficulty,
+            tags=getattr(q, "tags", []).copy(),
+            points_first_attempt=getattr(q, "points_first_attempt", 3),
+            points_second_attempt=getattr(q, "points_second_attempt", 2),
+            points_third_attempt=getattr(q, "points_third_attempt", 1),
+            points_fourth_attempt=getattr(q, "points_fourth_attempt", 0),
+            max_attempts=getattr(q, "max_attempts", 3),
         )
         self.questions.append(nq)
-        self._ref_force(); self._upd_stats(); self._mark_unsaved_changes()
+        self._ref_force()
+        self._upd_stats()
+        self._mark_unsaved_changes()
         if self._game_active:
             self.status.setText("⚠️ Duplicated — changes staged until game ends")
             return
@@ -1213,11 +1501,20 @@ class AdminDashboard(QWidget):
         self.status.setText("✅ Duplicated")
 
     def _del(self, qid: str):
-        if QMessageBox.question(self, "Delete", "Delete this question?",
-                                QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+        if (
+            QMessageBox.question(
+                self,
+                "Delete",
+                "Delete this question?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            == QMessageBox.Yes
+        ):
             self.questions = [q for q in self.questions if q.id != qid]
             self.disabled_ids.discard(qid)
-            self._ref_force(); self._upd_stats(); self._mark_unsaved_changes()
+            self._ref_force()
+            self._upd_stats()
+            self._mark_unsaved_changes()
             if self._game_active:
                 self.status.setText("⚠️ Deleted — changes staged until game ends")
                 return
@@ -1229,37 +1526,47 @@ class AdminDashboard(QWidget):
     def _mt_ch(self, mt: str):
         self.bb.setEnabled(mt != "None")
         hints = {
-            "None":  ("No media", "Enter question text..."),
+            "None": ("No media", "Enter question text..."),
             "Image": ("e.g. images/photo.jpg", "Who is this player?"),
-            "Audio": ("e.g. audio/clip.mp3",   "Which team's anthem is this?"),
-            "Video": ("e.g. video/clip.mp4",   "Who scored this goal?"),
+            "Audio": ("e.g. audio/clip.mp3", "Which team's anthem is this?"),
+            "Video": ("e.g. video/clip.mp4", "Who scored this goal?"),
         }
         path_ph, q_ph = hints.get(mt, ("", ""))
         self.emp.setPlaceholderText(path_ph)
         self.et.setPlaceholderText(q_ph)
         if mt == "None":
             self.emp.clear()
-        icons = {"Image": ("🖼️", "#5ddbff"), "Audio": ("🔊", "#a855f7"), "Video": ("🎬", "#f97316")}
+        icons = {
+            "Image": ("🖼️", "#5ddbff"),
+            "Audio": ("🔊", "#a855f7"),
+            "Video": ("🎬", "#f97316"),
+        }
         if hasattr(self, "question_label"):
             if mt in icons:
                 icon, col = icons[mt]
                 self.question_label.setText(f"Question Text {icon}:")
-                self.question_label.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {col};")
+                self.question_label.setStyleSheet(
+                    f"font-size: 12px; font-weight: 700; color: {col};"
+                )
             else:
                 self.question_label.setText("Question Text:")
-                self.question_label.setStyleSheet("font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.8);")
+                self.question_label.setStyleSheet(
+                    "font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.8);"
+                )
 
     def _br(self):
         import shutil
 
-        mt  = self.emt.currentText()
+        mt = self.emt.currentText()
         flt = {
             "Image": "Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp)",
             "Audio": "Audio (*.mp3 *.wav *.ogg *.m4a *.flac)",
             "Video": "Video (*.mp4 *.avi *.mkv *.mov *.webm)",
         }
         start = str(self.current_excel_path.parent) if self.current_excel_path else ""
-        selected_path, _ = QFileDialog.getOpenFileName(self, f"Select {mt}", start, flt.get(mt, "*.*"))
+        selected_path, _ = QFileDialog.getOpenFileName(
+            self, f"Select {mt}", start, flt.get(mt, "*.*")
+        )
         if not selected_path:
             return
 
@@ -1297,39 +1604,43 @@ class AdminDashboard(QWidget):
             rel_dest = dest.relative_to(pack_dir)
             self.emp.setText(str(rel_dest).replace(chr(92), "/"))
             QMessageBox.information(
-                self,
-                "Media Imported",
-                f"Copied media into the pack\n{rel_dest}"
+                self, "Media Imported", f"Copied media into the pack\n{rel_dest}"
             )
         except Exception as e:
-            QMessageBox.critical(self, "Import Failed", f"Could not copy media into the pack\n{e}")
+            QMessageBox.critical(
+                self, "Import Failed", f"Could not copy media into the pack\n{e}"
+            )
 
     # ── STATS ─────────────────────────────────────────────────────────────────
 
     def _upd_stats(self):
         sel = len(self.questions) - len(self.disabled_ids)
-        e   = sum(1 for q in self.questions if q.difficulty == "easy")
-        m   = sum(1 for q in self.questions if q.difficulty == "medium")
-        h   = sum(1 for q in self.questions if q.difficulty == "hard")
-        self._sc(self.c_tot,  str(len(self.questions)))
-        self._sc(self.c_sel,  str(sel))
+        e = sum(1 for q in self.questions if q.difficulty == "easy")
+        m = sum(1 for q in self.questions if q.difficulty == "medium")
+        h = sum(1 for q in self.questions if q.difficulty == "hard")
+        self._sc(self.c_tot, str(len(self.questions)))
+        self._sc(self.c_sel, str(sel))
         self._sc(self.c_easy, str(e))
-        self._sc(self.c_med,  str(m))
+        self._sc(self.c_med, str(m))
         self._sc(self.c_hard, str(h))
 
     def _mini_card(self, t: str, v: str, c: str) -> QFrame:
-        ca  = QFrame()
+        ca = QFrame()
         ca.setStyleSheet(
             f"QFrame {{ background: rgba(20,30,45,0.6); "
             f"border-left: 3px solid {c}; border-radius: 6px; padding: 8px 12px; }}"
         )
-        hl  = QHBoxLayout(ca)
+        hl = QHBoxLayout(ca)
         hl.setSpacing(10)
-        vla = QLabel(v); vla.setObjectName("value")
+        vla = QLabel(v)
+        vla.setObjectName("value")
         vla.setStyleSheet(f"font-size: 24px; font-weight: 900; color: {c};")
         tla = QLabel(t)
-        tla.setStyleSheet("font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.6);")
-        hl.addWidget(vla); hl.addWidget(tla)
+        tla.setStyleSheet(
+            "font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.6);"
+        )
+        hl.addWidget(vla)
+        hl.addWidget(tla)
         return ca
 
     def _sc(self, ca: QFrame, v: str):
@@ -1341,7 +1652,9 @@ class AdminDashboard(QWidget):
 
     def _l(self, t: str) -> QLabel:
         lbl = QLabel(t)
-        lbl.setStyleSheet("font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.9);")
+        lbl.setStyleSheet(
+            "font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.9);"
+        )
         return lbl
 
     def _inp(self) -> str:

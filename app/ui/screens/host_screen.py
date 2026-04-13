@@ -378,7 +378,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
         main_row.setSpacing(SCALE.main_row_spacing)
         main_row.setContentsMargins(0, 0, 0, 0)
         main_row.addWidget(left_column, stretch=1)
-        main_row.addWidget(center_widget, stretch=5)
+        main_row.addWidget(center_widget, stretch=3)
         main_row.addWidget(right_column, stretch=1)
 
         root.addLayout(main_row, stretch=1)
@@ -459,7 +459,7 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         center_widget = QWidget()
         center_widget.setStyleSheet("QWidget { background: transparent; }")
-        center_widget.setMaximumWidth(2400)
+        center_widget.setMaximumWidth(1200)
         center_layout = QVBoxLayout(center_widget)
         center_layout.setSpacing(SCALE.center_spacing)
         center_layout.setContentsMargins(
@@ -487,12 +487,10 @@ class HostScreen(RemoteKeyHandler, QWidget):
         timer_row_layout.addWidget(self.round_badge, alignment=Qt.AlignVCenter)
         timer_row_layout.addStretch()
 
-        center_layout.addWidget(
-            timer_row, stretch=0, alignment=Qt.AlignHCenter | Qt.AlignTop
-        )
+        center_layout.addWidget(timer_row, alignment=Qt.AlignCenter)
 
         self.media = MediaView()
-        center_layout.addWidget(self.media, stretch=3)
+        center_layout.addWidget(self.media, stretch=1)
 
         self.question = QLabel("Press START GAME to begin")
         self.question.setWordWrap(True)
@@ -503,11 +501,11 @@ class HostScreen(RemoteKeyHandler, QWidget):
             f"border: 3px solid #39FF14; border-radius: 16px; "
             f"min-height: {SCALE.question_min_h}px;"
         )
-        center_layout.addWidget(self.question, stretch=3)
+        center_layout.addWidget(self.question)
 
         # THIS WAS MISSING
         self.options = OptionsView()
-        center_layout.addWidget(self.options, stretch=2)
+        center_layout.addWidget(self.options)
 
         return center_widget
 
@@ -1328,7 +1326,6 @@ class HostScreen(RemoteKeyHandler, QWidget):
 
         if is_correct:
             self.sfx.play_correct()
-            self.sfx.play_point()
             self.correct_flash.flash_green("✅ CORRECT!")
             self.options.mark_option_correct(answer)
 
