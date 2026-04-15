@@ -638,6 +638,37 @@ class AdminDashboard(QWidget):
     def set_game_active(self, active: bool) -> None:
         self._game_active = active
 
+    def _get_pack_root(self, excel_path: Optional[Path] = None) -> Optional[Path]:
+        path = excel_path or self.current_excel_path
+        if not path:
+            return None
+        path = Path(path)
+        parent = path.parent
+        if parent.name.lower() == "excel":
+            return parent.parent
+        return parent
+
+    def _get_excel_dir(self, excel_path: Optional[Path] = None) -> Optional[Path]:
+        pack_root = self._get_pack_root(excel_path)
+        if not pack_root:
+            return None
+        excel_dir = pack_root / "excel"
+        excel_dir.mkdir(parents=True, exist_ok=True)
+        return excel_dir
+
+    def _normalize_excel_target_path(self, selected_path: str | Path) -> Path:
+        path = Path(selected_path)
+        if not path.suffix:
+            path = path.with_suffix(".xlsx")
+
+        if path.parent.name.lower() == "excel":
+            path.parent.mkdir(parents=True, exist_ok=True)
+            return path
+
+        excel_dir = path.parent / "excel"
+        excel_dir.mkdir(parents=True, exist_ok=True)
+        return excel_dir / path.name
+
     # ── UNSAVED-CHANGES HELPERS ───────────────────────────────────────────────
 
     def _mark_unsaved_changes(self):
@@ -1089,15 +1120,18 @@ class AdminDashboard(QWidget):
             if reply != QMessageBox.Yes:
                 return
 
+        default_dir = self._get_excel_dir() or Path.cwd() / "excel"
+        default_dir.mkdir(parents=True, exist_ok=True)
         p, _ = QFileDialog.getSaveFileName(
-            self, "Create New Question Pack", "questions.xlsx", "Excel Files (*.xlsx)"
+            self,
+            "Create New Question Pack",
+            str(default_dir / "questions.xlsx"),
+            "Excel Files (*.xlsx)",
         )
         if not p:
             return
 
-        path = Path(p)
-        if not path.suffix:
-            path = path.with_suffix(".xlsx")
+        path = self._normalize_excel_target_path(p)
 
         try:
             # Build one blank template question so the file isn't empty
@@ -1151,8 +1185,13 @@ class AdminDashboard(QWidget):
             QMessageBox.critical(self, "❌ Failed", f"Could not create pack:\n{e}")
 
     def _load(self):
+        start_dir = self._get_excel_dir() or (Path.cwd() / "excel")
+        start_dir.mkdir(parents=True, exist_ok=True)
         p, _ = QFileDialog.getOpenFileName(
-            self, "Load Questions from Excel", "", "Excel Files (*.xlsx *.xls)"
+            self,
+            "Load Questions from Excel",
+            str(start_dir),
+            "Excel Files (*.xlsx *.xls)",
         )
         if not p:
             return
@@ -1221,19 +1260,22 @@ class AdminDashboard(QWidget):
             QMessageBox.critical(self, "Error", f"Save failed:\n{e}")
 
     def _save_as(self):
+        default_dir = self._get_excel_dir() or Path.cwd() / "excel"
+        default_dir.mkdir(parents=True, exist_ok=True)
         p, _ = QFileDialog.getSaveFileName(
-            self, "Save As", "questions.xlsx", "Excel (*.xlsx)"
+            self, "Save As", str(default_dir / "questions.xlsx"), "Excel (*.xlsx)"
         )
         if not p:
             return
         try:
+            save_path = self._normalize_excel_target_path(p)
             export_to_excel(
-                self.questions, Path(p), self.disabled_ids, config=self.config
+                self.questions, save_path, self.disabled_ids, config=self.config
             )
-            self.current_excel_path = Path(p)
-            self.file_lbl.setText(f"📄 {Path(p).name}")
+            self.current_excel_path = save_path
+            self.file_lbl.setText(f"📄 {save_path.name}")
             self.status.setText(f"✅ Saved {len(self.questions)}")
-            self.pack_saved.emit(str(Path(p)))
+            self.pack_saved.emit(str(save_path))
             self._sync_to_engine()
             self._clear_unsaved_changes()
             enabled_count = len(self.questions) - len(self.disabled_ids)
@@ -1259,13 +1301,19 @@ class AdminDashboard(QWidget):
         if not sel:
             QMessageBox.warning(self, "No Selection", "No questions selected")
             return
+        default_dir = self._get_excel_dir() or Path.cwd() / "excel"
+        default_dir.mkdir(parents=True, exist_ok=True)
         p, _ = QFileDialog.getSaveFileName(
-            self, "Export Selected", "selected.xlsx", "Excel (*.xlsx)"
+            self,
+            "Export Selected",
+            str(default_dir / "selected.xlsx"),
+            "Excel (*.xlsx)",
         )
         if not p:
             return
         try:
-            export_to_excel(sel, Path(p), disabled_ids=set())
+            export_path = self._normalize_excel_target_path(p)
+            export_to_excel(sel, export_path, disabled_ids=set())
             QMessageBox.information(
                 self, "Success", f"Exported {len(sel)} enabled questions"
             )
@@ -1563,7 +1611,7 @@ class AdminDashboard(QWidget):
             "Audio": "Audio (*.mp3 *.wav *.ogg *.m4a *.flac)",
             "Video": "Video (*.mp4 *.avi *.mkv *.mov *.webm)",
         }
-        start = str(self.current_excel_path.parent) if self.current_excel_path else ""
+        start = str(self._get_pack_root() or Path.cwd())
         selected_path, _ = QFileDialog.getOpenFileName(
             self, f"Select {mt}", start, flt.get(mt, "*.*")
         )
@@ -1575,7 +1623,7 @@ class AdminDashboard(QWidget):
             self.emp.setText(str(src))
             return
 
-        pack_dir = self.current_excel_path.parent
+        pack_dir = self._get_pack_root()
         try:
             rel = src.relative_to(pack_dir)
             self.emp.setText(str(rel).replace(chr(92), "/"))
