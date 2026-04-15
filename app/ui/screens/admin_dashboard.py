@@ -638,6 +638,19 @@ class AdminDashboard(QWidget):
     def set_game_active(self, active: bool) -> None:
         self._game_active = active
 
+    @staticmethod
+    def _dist_root() -> Path:
+        """The folder that contains excel/ and media/ in the packaged build.
+
+        When frozen: the directory that holds the exe (dist/FootballQuiz/).
+        In dev:      the repo root (where build.py / main.py live).
+        """
+        import sys
+
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).parent
+        return Path(__file__).resolve().parents[3]  # app/ui/screens/ → repo root
+
     def _get_pack_root(self, excel_path: Optional[Path] = None) -> Optional[Path]:
         path = excel_path or self.current_excel_path
         if not path:
@@ -647,6 +660,35 @@ class AdminDashboard(QWidget):
         if parent.name.lower() == "excel":
             return parent.parent
         return parent
+
+    def _update_pack_dir(self, excel_path: Optional[Path] = None) -> None:
+        """Set cfg.pack_dir to the pack root and emit config_changed.
+
+        The pack root is the folder that contains both the Excel file (inside
+        an optional 'excel/' subfolder) and the 'media/' folder.  Examples:
+
+          FootballQuiz/packs/questions.xlsx   → pack_root = FootballQuiz/packs/
+          FootballQuiz/excel/questions.xlsx   → pack_root = FootballQuiz/
+          FootballQuiz/questions.xlsx         → pack_root = FootballQuiz/
+
+        Media paths stored in the Excel (e.g. 'media/video.mp4') are always
+        relative to this root, so the layout
+
+          FootballQuiz/
+              excel/questions.xlsx
+              media/video.mp4
+
+        resolves correctly: pack_root = FootballQuiz/, media path resolves to
+        FootballQuiz/media/video.mp4.
+        """
+        import dataclasses
+
+        root = self._get_pack_root(excel_path)
+        if root is None:
+            return
+        self.config = dataclasses.replace(self.config, pack_dir=root)
+        self.config_changed.emit(self.config)
+        print(f"[ADMIN] pack_dir → {root}")
 
     def _get_excel_dir(self, excel_path: Optional[Path] = None) -> Optional[Path]:
         pack_root = self._get_pack_root(excel_path)
@@ -1120,7 +1162,7 @@ class AdminDashboard(QWidget):
             if reply != QMessageBox.Yes:
                 return
 
-        default_dir = self._get_excel_dir() or Path.cwd() / "excel"
+        default_dir = self._get_excel_dir() or (self._dist_root() / "excel")
         default_dir.mkdir(parents=True, exist_ok=True)
         p, _ = QFileDialog.getSaveFileName(
             self,
@@ -1164,6 +1206,8 @@ class AdminDashboard(QWidget):
             self.current_excel_path = path
             self.has_unsaved_changes = False
 
+            self._update_pack_dir(self.current_excel_path)
+
             self.file_lbl.setText(f"📄 {path.name}  — new pack created")
             self.file_lbl.setStyleSheet(
                 "font-size: 12px; color: #39FF14; "
@@ -1185,7 +1229,7 @@ class AdminDashboard(QWidget):
             QMessageBox.critical(self, "❌ Failed", f"Could not create pack:\n{e}")
 
     def _load(self):
-        start_dir = self._get_excel_dir() or (Path.cwd() / "excel")
+        start_dir = self._get_excel_dir() or (self._dist_root() / "excel")
         start_dir.mkdir(parents=True, exist_ok=True)
         p, _ = QFileDialog.getOpenFileName(
             self,
@@ -1202,6 +1246,10 @@ class AdminDashboard(QWidget):
             self.disabled_ids = disabled
             self.current_excel_path = Path(p)
             enabled_count = len(ld) - len(disabled)
+
+            # Update pack_dir so media paths resolve against the pack root
+            # (the folder containing both 'excel/' and 'media/').
+            self._update_pack_dir(self.current_excel_path)
 
             if config_dict:
                 self._apply_config_dict(config_dict)
@@ -1260,7 +1308,7 @@ class AdminDashboard(QWidget):
             QMessageBox.critical(self, "Error", f"Save failed:\n{e}")
 
     def _save_as(self):
-        default_dir = self._get_excel_dir() or Path.cwd() / "excel"
+        default_dir = self._get_excel_dir() or (self._dist_root() / "excel")
         default_dir.mkdir(parents=True, exist_ok=True)
         p, _ = QFileDialog.getSaveFileName(
             self, "Save As", str(default_dir / "questions.xlsx"), "Excel (*.xlsx)"
@@ -1273,6 +1321,7 @@ class AdminDashboard(QWidget):
                 self.questions, save_path, self.disabled_ids, config=self.config
             )
             self.current_excel_path = save_path
+            self._update_pack_dir(self.current_excel_path)
             self.file_lbl.setText(f"📄 {save_path.name}")
             self.status.setText(f"✅ Saved {len(self.questions)}")
             self.pack_saved.emit(str(save_path))
@@ -1301,7 +1350,7 @@ class AdminDashboard(QWidget):
         if not sel:
             QMessageBox.warning(self, "No Selection", "No questions selected")
             return
-        default_dir = self._get_excel_dir() or Path.cwd() / "excel"
+        default_dir = self._get_excel_dir() or (self._dist_root() / "excel")
         default_dir.mkdir(parents=True, exist_ok=True)
         p, _ = QFileDialog.getSaveFileName(
             self,
@@ -1611,7 +1660,7 @@ class AdminDashboard(QWidget):
             "Audio": "Audio (*.mp3 *.wav *.ogg *.m4a *.flac)",
             "Video": "Video (*.mp4 *.avi *.mkv *.mov *.webm)",
         }
-        start = str(self._get_pack_root() or Path.cwd())
+        start = str(self._get_pack_root() or (self._dist_root() / "media"))
         selected_path, _ = QFileDialog.getOpenFileName(
             self, f"Select {mt}", start, flt.get(mt, "*.*")
         )

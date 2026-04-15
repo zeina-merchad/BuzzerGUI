@@ -127,9 +127,17 @@ class MediaView(QWidget):
             self.clear()
             return
 
-        media_path = (Path(pack_dir) / (media.path or "")).resolve()
+        raw = media.path or ""
+
+        # If the user typed just a filename (no folder separator), assume it
+        # lives in the media/ subfolder.  This way both "video.mp4" and the
+        # explicit "media/video.mp4" work when hand-editing the Excel.
+        if raw and "/" not in raw and "\\" not in raw:
+            raw = "media/" + raw
+
+        media_path = (Path(pack_dir) / raw).resolve()
         if not media_path.exists():
-            self.show_path(media.type.value, media.path or "")
+            self.show_path(media.type.value, raw)
             return
 
         if media.type.value == "image":

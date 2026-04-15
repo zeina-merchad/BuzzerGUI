@@ -2,13 +2,12 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QMessageBox
-
 from app.config import get_config
 from app.core.engine import GameEngine
 from app.core.models import GameConfig
 from app.hardware.mqtt_buzzer import MQTTBuzzerBackend
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 
 def resource_path(rel: str) -> str:
@@ -83,7 +82,21 @@ def create_desktop_shortcut() -> None:
 
 
 def _make_empty_config() -> GameConfig:
-    """Minimal config — no questions. Engine populated by AdminDashboard."""
+    """Minimal config — no questions. Engine populated by AdminDashboard.
+
+    pack_dir is set to the executable's directory so that relative media
+    paths (e.g. 'media/video.mp4') resolve correctly against the dist
+    layout even before the user loads an Excel file.  The AdminDashboard
+    overrides pack_dir via _update_pack_dir() the moment a file is loaded.
+    """
+    if getattr(sys, "frozen", False):
+        # Packaged build: exe lives in dist/FootballQuiz/; excel/ and
+        # media/ are siblings of the exe, so pack_dir = exe directory.
+        pack_dir = Path(os.path.dirname(sys.executable))
+    else:
+        # Development: run from the repo root.
+        pack_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+
     return GameConfig(
         name="No Pack Loaded",
         version=1,
@@ -93,7 +106,7 @@ def _make_empty_config() -> GameConfig:
         answer_seconds=8,
         shuffle_questions=False,
         question_files=(),
-        pack_dir=Path.cwd(),
+        pack_dir=pack_dir,
         enable_cascading_attempts=True,
         reset_timer_each_attempt=False,
         penalty_for_wrong=0,
@@ -115,7 +128,13 @@ class _NoOpMQTTBackend:
             def emit(self, *a, **kw):
                 pass
 
-        heartbeat_resolved = _Sig()
+        # Keep only the signals that still exist on MQTTSignalBridge.
+        buzz_received = _Sig()
+        answer_received = _Sig()
+        player_connected = _Sig()
+        player_disconnected = _Sig()
+        state_changed = _Sig()
+        ping_resolved = _Sig()  # present in ping-enabled builds
 
     bridge = _Bridge()
 
@@ -124,7 +143,7 @@ class _NoOpMQTTBackend:
     on_player_connected_callback = None
     on_player_disconnected_callback = None
     on_state_change_callback = None
-    on_player_unresponsive_callback = None
+    on_ping_resolved_callback = None
 
     def connect(self):
         return True
@@ -150,23 +169,11 @@ class _NoOpMQTTBackend:
     def mark_answer_correct(self, player_id):
         pass
 
-    def send_heartbeat(self, player_id):
-        pass
-
-    def send_heartbeat_to_all(self, timeout_seconds=10):
-        pass
-
-    def get_connected_players(self, timeout_seconds=60):
+    def get_connected_players(self):
         return []
 
-    def check_all_players_liveliness(self):
-        return {1: False, 2: False, 3: False, 4: False}
-
-    def check_player_liveliness(self, player_id):
-        return False
-
-    def all_pings_resolved(self, timeout_seconds=10):
-        return True
+    def ping_players(self, player_ids, timeout_s=5.0):
+        pass
 
     def get_status(self):
         return {"connected": False, "state": "demo"}
@@ -197,11 +204,10 @@ def main():
     app.setOrganizationName("Football Trivia Game")
 
     # ── Display mode selection ────────────────────────────────────────────────
+    from app.ui.display_config import set_scale
     from PySide6.QtCore import Qt as _Qt
     from PySide6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QVBoxLayout
     from PySide6.QtWidgets import QLabel as _QLabel
-
-    from app.ui.display_config import set_scale
 
     class _DisplayDialog(QDialog):
         def __init__(self):
